@@ -11,6 +11,11 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/works', workRouter);
 apiRouter.use('/media', mediaRouter);
 
+// Health check para monitoreo y orquestadores (Render/Docker)
+apiRouter.get('/health', (_req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Ruta protegida de diagnóstico
 apiRouter.get('/auth/protected-ping', requireAuth, (req, res) => {
   res.status(200).json({
