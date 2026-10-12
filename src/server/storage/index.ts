@@ -22,7 +22,7 @@ function createStorageDriver(): StorageDriver {
       region: process.env.STORAGE_REGION || 'auto',
       accessKeyId,
       secretAccessKey,
-      publicBaseUrl: process.env.STORAGE_PUBLIC_URL,
+      publicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL,
     });
   }
 
