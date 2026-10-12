@@ -67,7 +67,7 @@ export const App: React.FC = () => {
                         Catálogo de Trabajos Realizados
                     </h2>
                     <p className="text-sm text-muted-foreground max-w-2xl">
-                        Bitácora ordenada cronológicamente de proyectos, respaldada con documentación fotográfica y audiovisual en alta resolución.
+                        Historial ordenado cronológicamente de proyectos, respaldada con documentación fotográfica y audiovisual.
                     </p>
                 </div>
 

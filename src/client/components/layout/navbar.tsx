@@ -21,7 +21,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenLogin, onOpenCreate }) => 
                     </div>
                     <div>
                         <h1 className="text-base sm:text-lg font-semibold text-foreground tracking-tight leading-tight">
-                            Bitácora de Trabajos
+                            Historial de Proyectos
                         </h1>
                         <p className="text-xs text-muted-foreground hidden sm:block">
                             Registro visual y cronológico de proyectos

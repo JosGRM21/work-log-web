@@ -126,7 +126,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
                     <DialogDescription>
                         {isEditing
                             ? 'Modifique los datos técnicos, fechas o estado de este proyecto.'
-                            : 'Complete la ficha técnica para registrar un nuevo proyecto en la bitácora.'}
+                            : 'Complete la ficha técnica para registrar un nuevo proyecto en el historial.'}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -176,7 +176,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
                                 required
                             />
                             <span className="text-[12px] text-muted-foreground">
-                                Define el orden en la bitácora
+                                Define el orden en el historial
                             </span>
                         </div>
                     </div>
