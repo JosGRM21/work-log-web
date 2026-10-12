@@ -1,0 +1,54 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String     @unique @db.VarChar(255)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  fullName     String     @map("full_name") @db.VarChar(100)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  workItems    WorkItem[]
+
+  @@map("users")
+}
+
+model WorkItem {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String       @map("user_id") @db.Uuid
+  title         String       @db.VarChar(150)
+  description   String?      @db.Text
+  status        String       @default("pending") @db.VarChar(20)
+  referenceDate DateTime     @default(dbgenerated("CURRENT_DATE")) @map("reference_date") @db.Date
+  startDate     DateTime?    @map("start_date") @db.Date
+  endDate       DateTime?    @map("end_date") @db.Date
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user          User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  mediaAssets   MediaAsset[]
+
+  @@index([referenceDate(sort: Desc)], map: "idx_work_items_ref_date")
+  @@index([status], map: "idx_work_items_status")
+  @@index([status, referenceDate(sort: Desc)], map: "idx_work_items_status_date")
+  @@map("work_items")
+}
+
+model MediaAsset {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workItemId    String    @map("work_item_id") @db.Uuid
+  filePath      String    @map("file_path") @db.VarChar(500)
+  mediaType     String    @map("media_type") @db.VarChar(10)
+  mimeType      String    @map("mime_type") @db.VarChar(50)
+  fileSizeBytes BigInt    @map("file_size_bytes") @db.BigInt
+  sortOrder     Int       @default(0) @map("sort_order") @db.Integer
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  workItem      WorkItem  @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+
+  @@index([workItemId, sortOrder(sort: Asc)], map: "idx_media_assets_work_order")
+  @@map("media_assets")
+}

@@ -1,0 +1,80 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate:
+    name: Code Quality & Automated Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_ci_password
+          POSTGRES_DB: work_log_ci_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Static Type Check (TypeScript)
+        run: npm run type-check
+
+      - name: Lint Codebase (ESLint)
+        run: npm run lint
+
+      - name: Generate Prisma Client & Run Migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres_ci_password@localhost:5432/work_log_ci_db?schema=public
+          PRISMA_CLI_BINARY_TARGETS: debian-openssl-3.0.x
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+          npx tsx src/server/db/seed.ts
+
+      - name: Run Test Suite (Unit & Integration)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres_ci_password@localhost:5432/work_log_ci_db?schema=public
+          SESSION_SECRET: test_ci_cd_secure_secret_key_at_least_32_characters_long
+          STORAGE_DRIVER: local
+          LOCAL_UPLOAD_PATH: ./uploads
+          NODE_ENV: test
+        run: npm test
+
+      - name: Build Frontend Application
+        run: npm run build:client
+
+  deploy:
+    name: Deploy to Production
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy Notification
+        run: |
+          echo "CI checks passed successfully. Deployment triggered for production branch."
