@@ -103,10 +103,20 @@ export function verifySessionToken(token: string): SessionPayload | null {
 
 export function getSessionCookieOptions(): CookieOptions {
   const isProduction = process.env.NODE_ENV === 'production';
+  const configuredSameSite = process.env.SESSION_COOKIE_SAME_SITE?.toLowerCase();
+  const sameSite: 'lax' | 'strict' | 'none' =
+    configuredSameSite === 'lax' ||
+      configuredSameSite === 'strict' ||
+      configuredSameSite === 'none'
+      ? configuredSameSite
+      : isProduction
+        ? 'none'
+        : 'lax';
+
   return {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: 'lax',
+    secure: isProduction || sameSite === 'none',
+    sameSite,
     path: '/',
     maxAge: SESSION_EXPIRATION_MS,
   };
