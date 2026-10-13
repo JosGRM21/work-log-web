@@ -5,6 +5,7 @@ export interface PutObjectOptions {
   body: Buffer | Uint8Array | Readable;
   mimeType: string;
   contentLength?: number;
+  signal?: AbortSignal;
 }
 
 export interface PutObjectResult {
@@ -17,4 +18,5 @@ export interface StorageDriver {
   putObject(options: PutObjectOptions): Promise<PutObjectResult>;
   deleteObject(key: string): Promise<void>;
   getUrl(key: string): string;
+  normalizeKey(rawKeyOrPath: string): string;
 }

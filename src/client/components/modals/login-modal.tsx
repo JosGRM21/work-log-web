@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/auth-context.js';
 import {
     Dialog,
@@ -20,10 +20,18 @@ interface LoginModalProps {
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
     const { login } = useAuth();
-    const [identifier, setIdentifier] = useState('admin@empresa.com');
-    const [password, setPassword] = useState('PasswordSegura123!');
+    const [identifier, setIdentifier] = useState('');
+    const [password, setPassword] = useState('');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (!isOpen) {
+            setIdentifier('');
+            setPassword('');
+            setErrorMsg(null);
+        }
+    }, [isOpen]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -50,7 +58,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                         <DialogTitle className="text-xl">Acceso Administrativo</DialogTitle>
                     </div>
                     <DialogDescription>
-                        Ingrese sus credenciales de administrador para gestionar trabajos y evidencias multimedia.
+                        Ingrese sus credenciales de administrador para gestionar trabajos y evidencias
+                        multimedia.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -63,6 +72,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                             value={identifier}
                             onChange={(e) => setIdentifier(e.target.value)}
                             placeholder="admin@empresa.com"
+                            autoComplete="username"
                             required
                             autoFocus
                         />
@@ -75,7 +85,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            placeholder="••••••••"
+                            placeholder="••••••••••••"
+                            autoComplete="current-password"
                             required
                         />
                     </div>
@@ -87,12 +98,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                     )}
 
                     <DialogFooter className="mt-2 pt-2">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={onClose}
-                            disabled={isSubmitting}
-                        >
+                        <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
                             Cancelar
                         </Button>
                         <Button type="submit" disabled={isSubmitting}>

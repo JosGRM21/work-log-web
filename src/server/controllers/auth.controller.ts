@@ -1,57 +1,32 @@
 import type { Request, Response, NextFunction } from 'express';
-import { prisma } from '../db/client.js';
-import { AppError } from '../errors/app-error.js';
-import { verifyPassword } from '../utils/password.js';
-import {
-  createSessionToken,
-  getSessionCookieOptions,
-  SESSION_COOKIE_NAME,
-} from '../utils/session.js';
+import { authService as defaultAuthService, type AuthService } from '../services/auth.service.js';
+import { getSessionCookieOptions, SESSION_COOKIE_NAME } from '../utils/session.js';
 
 export class AuthController {
+  constructor(private readonly service: AuthService = defaultAuthService) { }
+
   async login(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { identifier, password } = req.body ?? {};
+      const { token, user } = await this.service.authenticateUser(identifier, password);
 
-      if (!identifier || !password) {
-        throw AppError.badRequest('El identificador y la contraseña son obligatorios.');
-      }
-
-      const normalizedEmail = String(identifier).trim().toLowerCase();
-      const user = await prisma.user.findUnique({
-        where: { email: normalizedEmail },
-      });
-
-      if (!user) {
-        throw AppError.unauthorized('Credenciales inválidas. Compruebe el correo y la contraseña.');
-      }
-
-      const passwordMatches = await verifyPassword(String(password), user.passwordHash);
-
-      if (!passwordMatches) {
-        throw AppError.unauthorized('Credenciales inválidas. Compruebe el correo y la contraseña.');
-      }
-
-      const token = createSessionToken(user.id, user.email);
       res.cookie(SESSION_COOKIE_NAME, token, getSessionCookieOptions());
 
       res.status(200).json({
         message: 'Sesión iniciada con éxito',
-        user: {
-          id: user.id,
-          name: user.fullName,
-          email: user.email,
-        },
+        user,
       });
     } catch (error) {
       next(error);
     }
   }
 
-  async logout(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async logout(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { maxAge: _, ...cookieOptions } = getSessionCookieOptions();
+      const token = req.cookies?.[SESSION_COOKIE_NAME];
+      this.service.revokeSession(token);
 
+      const { maxAge: _, ...cookieOptions } = getSessionCookieOptions();
       res.clearCookie(SESSION_COOKIE_NAME, {
         ...cookieOptions,
         maxAge: 0,

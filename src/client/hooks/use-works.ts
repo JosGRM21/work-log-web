@@ -9,12 +9,26 @@ export interface UseWorksOptions {
 }
 
 export function useWorks(options: UseWorksOptions = {}) {
+    const limit = options.limit ?? 18;
     const [works, setWorks] = useState<WorkItemSummary[]>([]);
     const [total, setTotal] = useState(0);
+    const [offset, setOffset] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [statusFilter, setStatusFilter] = useState<WorkStatus | 'all'>(options.initialStatus ?? 'all');
-    const [order, setOrder] = useState<'desc' | 'asc'>(options.initialOrder ?? 'desc');
+    const [statusFilter, setStatusFilterState] = useState<WorkStatus | 'all'>(
+        options.initialStatus ?? 'all',
+    );
+    const [order, setOrderState] = useState<'desc' | 'asc'>(options.initialOrder ?? 'desc');
+
+    const setStatusFilter = useCallback((nextStatus: WorkStatus | 'all') => {
+        setOffset(0);
+        setStatusFilterState(nextStatus);
+    }, []);
+
+    const setOrder = useCallback((nextOrder: 'desc' | 'asc') => {
+        setOffset(0);
+        setOrderState(nextOrder);
+    }, []);
 
     const fetchWorks = useCallback(async () => {
         setIsLoading(true);
@@ -25,8 +39,8 @@ export function useWorks(options: UseWorksOptions = {}) {
                 params.append('status', statusFilter);
             }
             params.append('order', order);
-            params.append('limit', String(options.limit ?? 50));
-            params.append('offset', '0');
+            params.append('limit', String(limit));
+            params.append('offset', String(offset));
 
             const response = await apiClient.get<WorkListResponse>(`/works?${params.toString()}`);
             setWorks(response.data);
@@ -36,15 +50,18 @@ export function useWorks(options: UseWorksOptions = {}) {
         } finally {
             setIsLoading(false);
         }
-    }, [statusFilter, order, options.limit]);
+    }, [statusFilter, order, limit, offset]);
 
     useEffect(() => {
-        fetchWorks();
+        void fetchWorks();
     }, [fetchWorks]);
 
     return {
         works,
         total,
+        limit,
+        offset,
+        setOffset,
         isLoading,
         error,
         statusFilter,

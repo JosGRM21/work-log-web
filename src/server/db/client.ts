@@ -5,13 +5,9 @@ import { PrismaClient } from '@prisma/client';
 
 const rawConnectionString = process.env.DATABASE_URL;
 const isSsl = Boolean(
-  rawConnectionString?.includes('sslmode=require') ||
-  process.env.NODE_ENV === 'production'
+  rawConnectionString?.includes('sslmode=require') || process.env.NODE_ENV === 'production',
 );
 
-// pg-connection-string sobrescribe ssl si encuentra sslmode=require en la URL,
-// forzando verificación completa y fallando con el certificado autofirmado del pooler de Supabase.
-// Removemos sslmode de la URL y pasamos ssl explícito al objeto Pool.
 let connectionString = rawConnectionString;
 if (rawConnectionString && isSsl) {
   try {
@@ -19,15 +15,25 @@ if (rawConnectionString && isSsl) {
     url.searchParams.delete('sslmode');
     connectionString = url.toString();
   } catch {
-    // Si no es un formato URL parseable directo, fallback simple
     connectionString = rawConnectionString.replace(/[?&]sslmode=[^&]+/, '');
   }
 }
 
+const rejectUnauthorized = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false';
+const sslCa = process.env.DATABASE_SSL_CA;
+
 const pool = new Pool({
   connectionString,
-  ...(isSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+  ...(isSsl
+    ? {
+      ssl: {
+        rejectUnauthorized,
+        ...(sslCa ? { ca: sslCa } : {}),
+      },
+    }
+    : {}),
 });
+
 const adapter = new PrismaPg(pool);
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

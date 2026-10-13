@@ -1,5 +1,6 @@
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { PassThrough, Readable } from 'node:stream';
 import type {
   StorageDriver,
   PutObjectOptions,
@@ -37,47 +38,79 @@ export class S3StorageDriver implements StorageDriver {
     });
   }
 
+  normalizeKey(rawKeyOrPath: string): string {
+    let clean = rawKeyOrPath.replace(/\\/g, '/').replace(/^https?:\/\/[^/]+/, '');
+    clean = clean
+      .replace(/^\/uploads\/+/, '')
+      .replace(/^\/media\/+/, '')
+      .replace(new RegExp(`^/?${this.bucket}/+`), '')
+      .replace(/^\/+/, '');
+    return clean;
+  }
+
   async putObject(options: PutObjectOptions): Promise<PutObjectResult> {
+    const canonicalKey = this.normalizeKey(options.key);
+    let trackedBytes = options.contentLength ?? 0;
+    let bodyToUpload: Buffer | Uint8Array | Readable = options.body;
+
+    if (options.body instanceof Readable) {
+      trackedBytes = 0;
+      const counterStream = new PassThrough();
+      options.body.on('data', (chunk: Buffer) => {
+        trackedBytes += chunk.length;
+      });
+      options.body.on('error', (err) => counterStream.destroy(err));
+      options.body.pipe(counterStream);
+      bodyToUpload = counterStream;
+    } else {
+      trackedBytes = options.body.byteLength;
+    }
+
     const upload = new Upload({
       client: this.client,
       params: {
         Bucket: this.bucket,
-        Key: options.key,
-        Body: options.body,
+        Key: canonicalKey,
+        Body: bodyToUpload,
         ContentType: options.mimeType,
       },
     });
 
+    if (options.signal) {
+      options.signal.addEventListener('abort', () => {
+        upload.abort().catch(() => { });
+      });
+    }
+
     await upload.done();
 
     return {
-      key: options.key,
-      url: this.getUrl(options.key),
-      sizeBytes: options.contentLength ?? 0,
+      key: canonicalKey,
+      url: this.getUrl(canonicalKey),
+      sizeBytes: trackedBytes,
     };
   }
 
   async deleteObject(key: string): Promise<void> {
+    const canonicalKey = this.normalizeKey(key);
     await this.client.send(
       new DeleteObjectCommand({
         Bucket: this.bucket,
-        Key: key,
+        Key: canonicalKey,
       }),
     );
   }
 
   getUrl(key: string): string {
+    const cleanKey = this.normalizeKey(key);
     if (this.publicBaseUrl) {
       const cleanBase = this.publicBaseUrl.replace(/\/+$/, '');
-      const cleanKey = key.replace(/^\/+/, '');
       return `${cleanBase}/${cleanKey}`;
     }
-
     if (this.endpoint) {
       const cleanEndpoint = this.endpoint.replace(/\/+$/, '');
-      return `${cleanEndpoint}/${this.bucket}/${key}`;
+      return `${cleanEndpoint}/${this.bucket}/${cleanKey}`;
     }
-
-    return `https://${this.bucket}.s3.amazonaws.com/${key}`;
+    return `https://${this.bucket}.s3.amazonaws.com/${cleanKey}`;
   }
 }

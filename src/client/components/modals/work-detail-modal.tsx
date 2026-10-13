@@ -4,7 +4,6 @@ import { apiClient } from '../../api/client.js';
 import { useAuth } from '../../context/auth-context.js';
 import { cn } from 'cn';
 
-// Componentes shadcn/ui
 import {
     Dialog,
     DialogContent,
@@ -25,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { toast } from '@/components/ui/toast';
 import {
     Carousel,
     CarouselContent,
@@ -34,7 +34,6 @@ import {
     type CarouselApi,
 } from '@/components/ui/carousel';
 
-// Íconos Lucide
 import {
     Clock,
     CheckCircle2,
@@ -51,12 +50,12 @@ import {
     X,
 } from 'lucide-react';
 
-// Multimedia
 import { MediaLightbox } from '../media/media-lightbox.js';
 import { MediaUploader } from '../media/media-uploader.js';
 
 interface WorkDetailModalProps {
     workId: string | null;
+    refreshKey?: number;
     isOpen: boolean;
     onClose: () => void;
     onEdit: (work: WorkItemDetail) => void;
@@ -70,23 +69,27 @@ const STATUS_CONFIG: Record<
 > = {
     pending: {
         label: 'Por Realizar',
-        className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/15',
+        className:
+            'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/15',
         dotColor: 'bg-amber-500',
     },
     in_progress: {
         label: 'En Curso',
-        className: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20 hover:bg-blue-500/15',
+        className:
+            'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20 hover:bg-blue-500/15',
         dotColor: 'bg-blue-500',
     },
     completed: {
         label: 'Terminado',
-        className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15',
+        className:
+            'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15',
         dotColor: 'bg-emerald-500',
     },
 };
 
 export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
     workId,
+    refreshKey = 0,
     isOpen,
     onClose,
     onEdit,
@@ -98,15 +101,18 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Selección de imagen activa (visor principal)
     const [selectedMediaIndex, setSelectedMediaIndex] = useState<number>(0);
     const [carouselApi, setCarouselApi] = useState<CarouselApi>();
 
     useEffect(() => {
         if (!carouselApi) return;
-        carouselApi.on('select', () => {
+        const handleSelect = () => {
             setSelectedMediaIndex(carouselApi.selectedScrollSnap());
-        });
+        };
+        carouselApi.on('select', handleSelect);
+        return () => {
+            carouselApi.off('select', handleSelect);
+        };
     }, [carouselApi]);
 
     useEffect(() => {
@@ -116,7 +122,6 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
         }
     }, [selectedMediaIndex, carouselApi]);
 
-    // Estados multimedia
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
     const [showUploader, setShowUploader] = useState(false);
     const [mediaToDelete, setMediaToDelete] = useState<string | null>(null);
@@ -129,7 +134,9 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
         try {
             const data = await apiClient.get<WorkItemDetail>(`/works/${workId}`);
             setWork(data);
-            setSelectedMediaIndex(0);
+            setSelectedMediaIndex((prev) =>
+                data.media.length > 0 ? Math.min(prev, data.media.length - 1) : 0,
+            );
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -139,13 +146,13 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
 
     useEffect(() => {
         if (isOpen && workId) {
-            loadWork();
+            void loadWork();
             setShowUploader(false);
         } else {
             setWork(null);
             setSelectedMediaIndex(0);
         }
-    }, [isOpen, workId, loadWork]);
+    }, [isOpen, workId, refreshKey, loadWork]);
 
     const handleDeleteMediaConfirm = async (mediaId: string) => {
         setIsDeletingMedia(true);
@@ -154,8 +161,17 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
             await loadWork();
             onWorkUpdated();
             setMediaToDelete(null);
+            toast.add({
+                title: 'Archivo eliminado',
+                description: 'El recurso multimedia fue purgado correctamente.',
+                type: 'success',
+            });
         } catch (err) {
-            alert(`Error al eliminar archivo: ${(err as Error).message}`);
+            toast.add({
+                title: 'Error al eliminar archivo',
+                description: (err as Error).message,
+                type: 'error',
+            });
         } finally {
             setIsDeletingMedia(false);
         }
@@ -178,15 +194,16 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
     const mediaList: MediaAssetDTO[] = work?.media || [];
     const imagesCount = mediaList.filter((m) => m.type === 'image').length;
     const videosCount = mediaList.filter((m) => m.type === 'video').length;
-    const statusInfo = work ? STATUS_CONFIG[work.status] || STATUS_CONFIG.pending : STATUS_CONFIG.pending;
+    const statusInfo = work
+        ? STATUS_CONFIG[work.status] || STATUS_CONFIG.pending
+        : STATUS_CONFIG.pending;
     const activeMedia = mediaList[selectedMediaIndex] || null;
 
-    // Bloque común de información para móvil y desktop
     const renderDetailsContent = () => {
         if (!work) return null;
+
         return (
             <div className="flex flex-col gap-4">
-                {/* Barra de Acciones de Administración */}
                 {isAuthenticated && (
                     <div className="flex flex-wrap items-center gap-2 p-2.5 bg-muted/40 rounded-xl border border-border">
                         <Button
@@ -198,6 +215,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                             <UploadCloud className="h-3.5 w-3.5" />
                             {showUploader ? 'Cerrar Subida' : 'Subir Medios'}
                         </Button>
+
                         <Button
                             variant="outline"
                             size="sm"
@@ -207,6 +225,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                             <Pencil className="h-3.5 w-3.5" />
                             Editar
                         </Button>
+
                         <Button
                             variant="outline"
                             size="sm"
@@ -219,7 +238,6 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                     </div>
                 )}
 
-                {/* Módulo de Subida Desplegable */}
                 {isAuthenticated && showUploader && (
                     <div className="p-3.5 bg-muted/40 rounded-xl border border-border animate-in fade-in-0 duration-200">
                         <div className="mb-2.5 pb-1.5 border-b border-border flex items-center justify-between">
@@ -242,19 +260,19 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                             currentImageCount={imagesCount}
                             currentVideoCount={videosCount}
                             onUploadSuccess={() => {
-                                loadWork();
+                                void loadWork();
                                 onWorkUpdated();
                             }}
                         />
                     </div>
                 )}
 
-                {/* Cronograma / Fechas del Proyecto */}
                 <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/20 p-3.5">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-1">
                         <Info className="w-3.5 h-3.5" />
                         Cronograma del Trabajo
                     </span>
+
                     <div className="flex items-center justify-between py-1.5 border-b border-border/50 text-xs">
                         <span className="text-muted-foreground flex items-center gap-1.5">
                             <Clock className="w-3.5 h-3.5" /> Fecha de Inicio
@@ -263,6 +281,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                             {work.start_date ? formatDate(work.start_date) : 'No definida'}
                         </span>
                     </div>
+
                     <div className="flex items-center justify-between py-1.5 text-xs">
                         <span className="text-muted-foreground flex items-center gap-1.5">
                             <CheckCircle2 className="w-3.5 h-3.5" /> Fecha de Finalización
@@ -273,7 +292,6 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                     </div>
                 </div>
 
-                {/* Descripción y Especificaciones */}
                 <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                         <FileText className="w-3.5 h-3.5" />
@@ -314,7 +332,8 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                 No fue posible cargar el trabajo
                             </DialogTitle>
                             <DialogDescription className="text-sm text-muted-foreground max-w-sm">
-                                {error || 'El identificador solicitado no existe o hubo un problema al obtener los datos.'}
+                                {error ||
+                                    'El identificador solicitado no existe o hubo un problema al obtener los datos.'}
                             </DialogDescription>
                             <Button variant="outline" size="sm" onClick={onClose} className="mt-2">
                                 Cerrar
@@ -322,17 +341,13 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                         </div>
                     ) : (
                         <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
-                            {/* ============================================================== */}
-                            {/* COLUMNA IZQUIERDA: VISOR PRINCIPAL + MINIATURAS INFERIORES     */}
-                            {/* ============================================================== */}
                             <div className="w-full lg:w-[58%] xl:w-[60%] flex flex-col shrink-0 lg:shrink lg:h-full bg-muted/10 border-b lg:border-b-0 lg:border-r border-border p-3.5 sm:p-5 gap-3 min-h-0">
-                                {/* PANTALLA PRINCIPAL / VISOR */}
                                 <div
                                     className={cn(
                                         'relative rounded-xl overflow-hidden group border border-border/80 shadow-inner flex flex-col',
                                         mediaList.length > 0
                                             ? 'bg-black/95 aspect-video sm:h-72 lg:h-auto lg:flex-1 lg:min-h-[300px]'
-                                            : 'bg-muted/50 dark:bg-muted/20 h-44 sm:h-52 lg:h-auto lg:flex-1 lg:min-h-[260px]'
+                                            : 'bg-muted/50 dark:bg-muted/20 h-44 sm:h-52 lg:h-auto lg:flex-1 lg:min-h-[260px]',
                                     )}
                                 >
                                     {mediaList.length > 0 ? (
@@ -346,7 +361,10 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                         >
                                             <CarouselContent className="h-full ml-0">
                                                 {mediaList.map((item, idx) => (
-                                                    <CarouselItem key={item.id} className="pl-0 h-full flex items-center justify-center relative">
+                                                    <CarouselItem
+                                                        key={item.id}
+                                                        className="pl-0 h-full flex items-center justify-center relative"
+                                                    >
                                                         {item.type === 'image' ? (
                                                             <img
                                                                 src={item.url}
@@ -375,10 +393,8 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                                 ))}
                                             </CarouselContent>
 
-                                            {/* Controles sobre el carrusel */}
                                             {activeMedia && (
                                                 <>
-                                                    {/* Contador y Badge de Tipo */}
                                                     <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 pointer-events-none">
                                                         <Badge className="bg-black/70 backdrop-blur-md text-white border-0 text-[11px] font-normal px-2 py-0.5">
                                                             {selectedMediaIndex + 1} / {mediaList.length}
@@ -388,7 +404,6 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                                         </Badge>
                                                     </div>
 
-                                                    {/* Botones de acción (evita solaparse con la X en móvil) */}
                                                     <div className="absolute top-3 right-12 lg:right-3 z-10 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
                                                         {isAuthenticated && (
                                                             <Button
@@ -418,7 +433,6 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                                         </Button>
                                                     </div>
 
-                                                    {/* Flechas de navegación */}
                                                     {mediaList.length > 1 && (
                                                         <>
                                                             <CarouselPrevious className="left-3 h-8 w-8 sm:h-9 sm:w-9 bg-black/50 hover:bg-black/80 text-white border-0 opacity-0 group-hover:opacity-100 transition-opacity shadow-md z-10" />
@@ -445,11 +459,10 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                     )}
                                 </div>
 
-                                {/* MINIATURAS INFERIORES: Solo visibles en escritorio si no hay medios */}
                                 <div
                                     className={cn(
                                         'shrink-0 flex-col gap-1.5',
-                                        mediaList.length === 0 ? 'hidden lg:flex' : 'flex'
+                                        mediaList.length === 0 ? 'hidden lg:flex' : 'flex',
                                     )}
                                 >
                                     <div className="flex items-center justify-between px-1">
@@ -458,7 +471,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                         </span>
                                         {mediaList.length > 0 && (
                                             <span className="text-[11px] text-muted-foreground">
-                                                {imagesCount} fotos • {videosCount} videos
+                                                {imagesCount} fotos · {videosCount} videos
                                             </span>
                                         )}
                                     </div>
@@ -476,7 +489,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                                             'relative w-20 sm:w-24 lg:w-auto shrink-0 aspect-video rounded-lg overflow-hidden border-2 transition-all duration-150 focus:outline-none bg-muted/60',
                                                             isSelected
                                                                 ? 'border-primary ring-2 ring-primary/20 scale-[1.02] shadow-sm'
-                                                                : 'border-border/70 hover:border-border opacity-70 hover:opacity-100'
+                                                                : 'border-border/70 hover:border-border opacity-70 hover:opacity-100',
                                                         )}
                                                     >
                                                         {item.type === 'image' ? (
@@ -508,7 +521,6 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                             })}
                                         </div>
                                     ) : (
-                                        /* Cuadros vacíos con fondo gris (solo en Desktop) */
                                         <div className="grid grid-cols-4 gap-2.5">
                                             {[1, 2, 3, 4].map((slot) => (
                                                 <div
@@ -523,21 +535,21 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* ============================================================== */}
-                            {/* COLUMNA DERECHA: INFORMACIÓN DETALLADA + ACCIONES + FOOTER     */}
-                            {/* ============================================================== */}
                             <div className="w-full lg:w-[42%] xl:w-[40%] flex flex-col flex-1 lg:h-full bg-background min-h-0">
-                                {/* Cabecera de detalles */}
                                 <DialogHeader className="p-4 sm:p-5 pb-3 border-b border-border space-y-2 text-left pr-10 shrink-0">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <Badge
                                             variant="outline"
-                                            className={cn('gap-1.5 px-2.5 py-0.5 text-xs rounded-full font-medium', statusInfo.className)}
+                                            className={cn(
+                                                'gap-1.5 px-2.5 py-0.5 text-xs rounded-full font-medium',
+                                                statusInfo.className,
+                                            )}
                                         >
                                             <span className={cn('h-1.5 w-1.5 rounded-full', statusInfo.dotColor)} />
                                             {statusInfo.label}
                                         </Badge>
                                     </div>
+
                                     <DialogTitle className="text-lg sm:text-xl font-bold tracking-tight text-foreground leading-snug line-clamp-2">
                                         {work.title}
                                     </DialogTitle>
@@ -546,17 +558,12 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                     </DialogDescription>
                                 </DialogHeader>
 
-                                {/* En móvil: Contenedor fluido sin restricciones de altura */}
-                                <div className="p-4 sm:p-5 lg:hidden">
-                                    {renderDetailsContent()}
-                                </div>
+                                <div className="p-4 sm:p-5 lg:hidden">{renderDetailsContent()}</div>
 
-                                {/* En desktop: ScrollArea dedicado e independiente */}
                                 <ScrollArea className="hidden lg:block flex-1 px-5 py-4 min-h-0">
                                     {renderDetailsContent()}
                                 </ScrollArea>
 
-                                {/* Footer con botón Aceptar (fijo en móvil con sticky) */}
                                 <div className="sticky bottom-0 lg:static p-3.5 sm:p-4 px-4 sm:px-5 border-t border-border bg-background/95 backdrop-blur-md flex justify-end shrink-0 z-20">
                                     <Button
                                         variant="default"
@@ -573,7 +580,6 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                 </DialogContent>
             </Dialog>
 
-            {/* Visor Lightbox a pantalla completa */}
             {work && (
                 <MediaLightbox
                     isOpen={lightboxIndex !== null}
@@ -583,15 +589,18 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                 />
             )}
 
-            {/* Confirmación de Borrado de Multimedia */}
-            <AlertDialog open={!!mediaToDelete} onOpenChange={(open: boolean) => !open && setMediaToDelete(null)}>
+            <AlertDialog
+                open={!!mediaToDelete}
+                onOpenChange={(open: boolean) => !open && setMediaToDelete(null)}
+            >
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle className="flex items-center gap-2 text-destructive">
                             <Trash2 className="h-5 w-5" /> ¿Eliminar archivo multimedia?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                            Esta acción es irreversible: se purgará de forma permanente tanto del registro como del almacenamiento físico en el servidor.
+                            Esta acción es irreversible: se purgará de forma permanente tanto del registro como
+                            del almacenamiento físico en el servidor.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

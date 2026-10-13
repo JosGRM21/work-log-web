@@ -1,22 +1,48 @@
 import 'dotenv/config';
-import bcrypt from 'bcryptjs';
 import { prisma } from './client.js';
+import { hashPassword } from '../utils/password.js';
 
 async function main(): Promise<void> {
-  console.log('Iniciando poblamiento de base de datos (db:seed)...');
+  const isProduction = process.env.NODE_ENV === 'production';
+  const adminEmail = (process.env.ADMIN_EMAIL || 'admin@empresa.com').trim().toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD || (isProduction ? '' : 'PasswordSegura123!');
+  const adminFullName = (process.env.ADMIN_FULL_NAME || 'Administrador Principal').trim();
+
+  if (isProduction && (!process.env.ADMIN_EMAIL || !adminPassword || adminPassword.length < 12)) {
+    throw new Error(
+      'En producción es obligatorio definir ADMIN_EMAIL y ADMIN_PASSWORD (mínimo 12 caracteres).',
+    );
+  }
+
+  const passwordHash = await hashPassword(adminPassword);
+
+  if (isProduction) {
+    const admin = await prisma.user.upsert({
+      where: { email: adminEmail },
+      update: {
+        fullName: adminFullName,
+      },
+      create: {
+        email: adminEmail,
+        passwordHash,
+        fullName: adminFullName,
+      },
+    });
+    console.log(`Administrador de producción asegurado: ${admin.email} (${admin.id})`);
+    return;
+  }
+
+  console.log('Iniciando poblamiento de base de datos de desarrollo/pruebas (db:seed)...');
 
   await prisma.mediaAsset.deleteMany();
   await prisma.workItem.deleteMany();
   await prisma.user.deleteMany();
 
-  const saltRounds = 12;
-  const passwordHash = await bcrypt.hash('PasswordSegura123!', saltRounds);
-
   const admin = await prisma.user.create({
     data: {
-      email: 'admin@empresa.com',
+      email: adminEmail,
       passwordHash,
-      fullName: 'Administrador Principal',
+      fullName: adminFullName,
     },
   });
 
@@ -62,7 +88,7 @@ async function main(): Promise<void> {
     data: [
       {
         workItemId: work2.id,
-        filePath: '/uploads/porton-estructura.webp',
+        filePath: 'porton-estructura.webp',
         mediaType: 'image',
         mimeType: 'image/webp',
         fileSizeBytes: 2450000n,
@@ -70,7 +96,7 @@ async function main(): Promise<void> {
       },
       {
         workItemId: work2.id,
-        filePath: '/uploads/porton-soldadura-avance.mp4',
+        filePath: 'porton-soldadura-avance.mp4',
         mediaType: 'video',
         mimeType: 'video/mp4',
         fileSizeBytes: 42100000n,
@@ -78,7 +104,7 @@ async function main(): Promise<void> {
       },
       {
         workItemId: work3.id,
-        filePath: '/uploads/mesa-resultado-final.webp',
+        filePath: 'mesa-resultado-final.webp',
         mediaType: 'image',
         mimeType: 'image/webp',
         fileSizeBytes: 3100000n,

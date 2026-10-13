@@ -3,22 +3,20 @@ import { prisma } from '../db/client.js';
 import { AppError } from '../errors/app-error.js';
 import { SESSION_COOKIE_NAME, verifySessionToken } from '../utils/session.js';
 
-export async function authenticate(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-): Promise<void> {
+async function resolveSessionUser(req: Request): Promise<void> {
+  if (req.user !== undefined) {
+    return;
+  }
+
   const token = req.cookies?.[SESSION_COOKIE_NAME];
   if (!token) {
     req.user = undefined;
-    next();
     return;
   }
 
   const payload = verifySessionToken(token);
   if (!payload) {
     req.user = undefined;
-    next();
     return;
   }
 
@@ -33,22 +31,33 @@ export async function authenticate(
         updatedAt: true,
       },
     });
-
-    if (!user) {
-      req.user = undefined;
-    } else {
-      req.user = user;
-    }
+    req.user = user ?? undefined;
   } catch {
     req.user = undefined;
   }
+}
 
+export async function authenticate(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  await resolveSessionUser(req);
   next();
 }
 
-export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
-  if (!req.user) {
-    throw AppError.unauthorized('La solicitud requiere una sesión activa.');
+export async function requireAuth(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    await resolveSessionUser(req);
+    if (!req.user) {
+      throw AppError.unauthorized('La solicitud requiere una sesión activa.');
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
-  next();
 }

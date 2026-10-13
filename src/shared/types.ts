@@ -1,4 +1,15 @@
-export type WorkStatus = 'pending' | 'in_progress' | 'completed';
+export const VALID_WORK_STATUSES = ['pending', 'in_progress', 'completed'] as const;
+export type WorkStatus = (typeof VALID_WORK_STATUSES)[number];
+
+export const ALLOWED_MEDIA_TYPES = ['image', 'video'] as const;
+export type AllowedMediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
+
+const UUID_V4_REGEX =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(id: string): boolean {
+    return typeof id === 'string' && UUID_V4_REGEX.test(id);
+}
 
 export interface UserSummary {
     id: string;
@@ -8,7 +19,7 @@ export interface UserSummary {
 
 export interface MediaPreview {
     url: string;
-    type: 'image' | 'video';
+    type: AllowedMediaType;
 }
 
 export interface MediaCount {
@@ -29,7 +40,7 @@ export interface WorkItemSummary {
 export interface MediaAssetDTO {
     id: string;
     url: string;
-    type: 'image' | 'video';
+    type: AllowedMediaType;
     size_bytes: number;
     sort_order: number;
     created_at: string;

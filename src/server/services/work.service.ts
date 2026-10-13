@@ -1,6 +1,7 @@
-import { prisma } from '../db/client.js';
+import type { PrismaClient } from '@prisma/client';
+import { prisma as defaultPrisma } from '../db/client.js';
 import { AppError } from '../errors/app-error.js';
-import { storage } from '../storage/index.js';
+import { storage as defaultStorage, type StorageDriver } from '../storage/index.js';
 import {
   type ListWorksQuery,
   type CreateWorkDTO,
@@ -9,27 +10,14 @@ import {
   isValidUuid,
   validateDateCoherence,
 } from '../validators/work.validator.js';
-
-export function resolvePublicMediaUrl(filePath: string): string {
-  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-    return filePath;
-  }
-  if (filePath.startsWith('/uploads/') || filePath.startsWith('/media/')) {
-    return filePath;
-  }
-  return storage.getUrl(filePath);
-}
-
-function extractStorageKey(filePath: string): string {
-  let key = filePath.replace(/^https?:\/\/[^/]+/, '');
-  key = key
-    .replace(/^\/uploads\//, '')
-    .replace(/^\/media\//, '')
-    .replace(/^\/+/, '');
-  return key;
-}
+import type { AllowedMediaType, WorkStatus } from '../../shared/types.js';
 
 export class WorkService {
+  constructor(
+    private readonly db: PrismaClient = defaultPrisma,
+    private readonly storageDriver: StorageDriver = defaultStorage,
+  ) { }
+
   async listWorks(query: ListWorksQuery) {
     const whereClause: { status?: string } = {};
     if (query.status) {
@@ -37,8 +25,8 @@ export class WorkService {
     }
 
     const [total, items] = await Promise.all([
-      prisma.workItem.count({ where: whereClause }),
-      prisma.workItem.findMany({
+      this.db.workItem.count({ where: whereClause }),
+      this.db.workItem.findMany({
         where: whereClause,
         orderBy: {
           referenceDate: query.order,
@@ -55,30 +43,49 @@ export class WorkService {
             orderBy: {
               sortOrder: 'asc',
             },
+            take: 1,
           },
         },
       }),
     ]);
 
+    const workIds = items.map((item) => item.id);
+    const countsByWork =
+      workIds.length > 0
+        ? await this.db.mediaAsset.groupBy({
+          by: ['workItemId', 'mediaType'],
+          where: { workItemId: { in: workIds } },
+          _count: { id: true },
+        })
+        : [];
+
+    const mediaCountsMap = new Map<string, { images: number; videos: number }>();
+    for (const row of countsByWork) {
+      const entry = mediaCountsMap.get(row.workItemId) ?? { images: 0, videos: 0 };
+      if (row.mediaType === 'image') {
+        entry.images = row._count.id;
+      } else if (row.mediaType === 'video') {
+        entry.videos = row._count.id;
+      }
+      mediaCountsMap.set(row.workItemId, entry);
+    }
+
     const formattedData = items.map((item) => {
       const firstMedia = item.mediaAssets[0];
       const mediaPreview = firstMedia
         ? {
-            url: resolvePublicMediaUrl(firstMedia.filePath),
-            type: firstMedia.mediaType,
-          }
+          url: this.storageDriver.getUrl(firstMedia.filePath),
+          type: firstMedia.mediaType as AllowedMediaType,
+        }
         : null;
 
-      const mediaCount = {
-        images: item.mediaAssets.filter((m) => m.mediaType === 'image').length,
-        videos: item.mediaAssets.filter((m) => m.mediaType === 'video').length,
-      };
+      const mediaCount = mediaCountsMap.get(item.id) ?? { images: 0, videos: 0 };
 
       return {
         id: item.id,
         title: item.title,
-        status: item.status,
-        reference_date: formatDateToIsoDateOnly(item.referenceDate),
+        status: item.status as WorkStatus,
+        reference_date: formatDateToIsoDateOnly(item.referenceDate)!,
         media_preview: mediaPreview,
         media_count: mediaCount,
         created_at: item.createdAt.toISOString(),
@@ -100,7 +107,7 @@ export class WorkService {
       throw AppError.notFound('El trabajo solicitado no existe o el identificador es inválido.');
     }
 
-    const item = await prisma.workItem.findUnique({
+    const item = await this.db.workItem.findUnique({
       where: { id },
       include: {
         mediaAssets: {
@@ -119,16 +126,16 @@ export class WorkService {
       id: item.id,
       title: item.title,
       description: item.description,
-      status: item.status,
-      reference_date: formatDateToIsoDateOnly(item.referenceDate),
+      status: item.status as WorkStatus,
+      reference_date: formatDateToIsoDateOnly(item.referenceDate)!,
       start_date: formatDateToIsoDateOnly(item.startDate),
       end_date: formatDateToIsoDateOnly(item.endDate),
       created_at: item.createdAt.toISOString(),
       updated_at: item.updatedAt.toISOString(),
       media: item.mediaAssets.map((asset) => ({
         id: asset.id,
-        url: resolvePublicMediaUrl(asset.filePath),
-        type: asset.mediaType,
+        url: this.storageDriver.getUrl(asset.filePath),
+        type: asset.mediaType as AllowedMediaType,
         size_bytes: Number(asset.fileSizeBytes),
         sort_order: asset.sortOrder,
         created_at: asset.createdAt.toISOString(),
@@ -137,7 +144,7 @@ export class WorkService {
   }
 
   async createWork(userId: string, data: CreateWorkDTO) {
-    const created = await prisma.workItem.create({
+    const created = await this.db.workItem.create({
       data: {
         userId,
         title: data.title,
@@ -159,8 +166,8 @@ export class WorkService {
     return {
       id: created.id,
       title: created.title,
-      status: created.status,
-      reference_date: formatDateToIsoDateOnly(created.referenceDate),
+      status: created.status as WorkStatus,
+      reference_date: formatDateToIsoDateOnly(created.referenceDate)!,
       created_at: created.createdAt.toISOString(),
     };
   }
@@ -170,46 +177,47 @@ export class WorkService {
       throw AppError.notFound('El trabajo solicitado no existe.');
     }
 
-    const existing = await prisma.workItem.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        startDate: true,
-        endDate: true,
-      },
-    });
+    const updated = await this.db.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{ id: string; start_date: Date | null; end_date: Date | null }>
+      >`
+        SELECT id, start_date, end_date FROM "work_items" WHERE id = ${id}::uuid FOR UPDATE
+      `;
 
-    if (!existing) {
-      throw AppError.notFound('El trabajo solicitado no existe.');
-    }
+      const existing = rows[0];
+      if (!existing) {
+        throw AppError.notFound('El trabajo solicitado no existe.');
+      }
 
-    const effectiveStartDate = data.startDate !== undefined ? data.startDate : existing.startDate;
-    const effectiveEndDate = data.endDate !== undefined ? data.endDate : existing.endDate;
+      const effectiveStartDate =
+        data.startDate !== undefined ? data.startDate : existing.start_date;
+      const effectiveEndDate = data.endDate !== undefined ? data.endDate : existing.end_date;
 
-    validateDateCoherence(effectiveStartDate, effectiveEndDate);
+      validateDateCoherence(effectiveStartDate, effectiveEndDate);
 
-    const updated = await prisma.workItem.update({
-      where: { id },
-      data: {
-        ...(data.title !== undefined ? { title: data.title } : {}),
-        ...(data.description !== undefined ? { description: data.description } : {}),
-        ...(data.status !== undefined ? { status: data.status } : {}),
-        ...(data.referenceDate !== undefined ? { referenceDate: data.referenceDate } : {}),
-        ...(data.startDate !== undefined ? { startDate: data.startDate } : {}),
-        ...(data.endDate !== undefined ? { endDate: data.endDate } : {}),
-      },
-      select: {
-        id: true,
-        title: true,
-        status: true,
-        updatedAt: true,
-      },
+      return tx.workItem.update({
+        where: { id },
+        data: {
+          ...(data.title !== undefined ? { title: data.title } : {}),
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.status !== undefined ? { status: data.status } : {}),
+          ...(data.referenceDate !== undefined ? { referenceDate: data.referenceDate } : {}),
+          ...(data.startDate !== undefined ? { startDate: data.startDate } : {}),
+          ...(data.endDate !== undefined ? { endDate: data.endDate } : {}),
+        },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          updatedAt: true,
+        },
+      });
     });
 
     return {
       id: updated.id,
       title: updated.title,
-      status: updated.status,
+      status: updated.status as WorkStatus,
       updated_at: updated.updatedAt.toISOString(),
     };
   }
@@ -219,7 +227,7 @@ export class WorkService {
       throw AppError.notFound('El trabajo solicitado no existe.');
     }
 
-    const existing = await prisma.workItem.findUnique({
+    const existing = await this.db.workItem.findUnique({
       where: { id },
       include: {
         mediaAssets: {
@@ -234,18 +242,16 @@ export class WorkService {
       throw AppError.notFound('El trabajo solicitado no existe.');
     }
 
-    const filesToPurge = existing.mediaAssets.map((asset) => extractStorageKey(asset.filePath));
+    const keysToPurge = existing.mediaAssets.map((asset) => asset.filePath);
 
-    // Borrado en cascada a nivel de BD (ON DELETE CASCADE)
-    await prisma.workItem.delete({
+    await this.db.workItem.delete({
       where: { id },
     });
 
-    // Purga física de archivos en Storage sin bloquear la respuesta si algún binario ya no existía
     await Promise.allSettled(
-      filesToPurge.map(async (key) => {
+      keysToPurge.map(async (key) => {
         try {
-          await storage.deleteObject(key);
+          await this.storageDriver.deleteObject(key);
         } catch (err) {
           console.warn(`No se pudo eliminar el archivo físico en storage: ${key}`, err);
         }

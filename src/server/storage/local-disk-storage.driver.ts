@@ -15,14 +15,24 @@ export class LocalDiskStorageDriver implements StorageDriver {
 
   constructor(uploadDir = './uploads', publicUrlPrefix = '/uploads') {
     this.uploadDir = path.resolve(process.cwd(), uploadDir);
-    this.publicUrlPrefix = publicUrlPrefix;
+    this.publicUrlPrefix = publicUrlPrefix.replace(/\/+$/, '');
+  }
+
+  normalizeKey(rawKeyOrPath: string): string {
+    return rawKeyOrPath
+      .replace(/\\/g, '/')
+      .replace(/^https?:\/\/[^/]+/, '')
+      .replace(new RegExp(`^${this.publicUrlPrefix}/+`), '')
+      .replace(/^\/media\/+/, '')
+      .replace(/^\/+/, '');
   }
 
   private resolveSafePath(key: string): string {
-    const sanitizedKey = path.normalize(key).replace(/^(\.\.(\/|\\|$))+/, '');
+    const cleanKey = this.normalizeKey(key);
+    const sanitizedKey = path.normalize(cleanKey).replace(/^(\.\.(\/|\\|$))+/, '');
     const absolutePath = path.resolve(this.uploadDir, sanitizedKey);
 
-    if (!absolutePath.startsWith(this.uploadDir)) {
+    if (!absolutePath.startsWith(this.uploadDir + path.sep) && absolutePath !== this.uploadDir) {
       throw new Error(`Acceso no permitido fuera del directorio de uploads: ${key}`);
     }
 
@@ -30,25 +40,30 @@ export class LocalDiskStorageDriver implements StorageDriver {
   }
 
   async putObject(options: PutObjectOptions): Promise<PutObjectResult> {
-    const destinationPath = this.resolveSafePath(options.key);
+    const canonicalKey = this.normalizeKey(options.key);
+    const destinationPath = this.resolveSafePath(canonicalKey);
     const directory = path.dirname(destinationPath);
 
     await mkdir(directory, { recursive: true });
 
-    if (options.body instanceof Readable) {
-      const writeStream = createWriteStream(destinationPath);
-      await pipeline(options.body, writeStream);
-    } else {
-      const stream = Readable.from(options.body);
-      const writeStream = createWriteStream(destinationPath);
-      await pipeline(stream, writeStream);
+    const sourceStream =
+      options.body instanceof Readable ? options.body : Readable.from(options.body);
+    const writeStream = createWriteStream(destinationPath);
+
+    try {
+      await pipeline(sourceStream, writeStream, {
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+    } catch (error) {
+      await unlink(destinationPath).catch(() => { });
+      throw error;
     }
 
     const fileStats = await stat(destinationPath);
 
     return {
-      key: options.key,
-      url: this.getUrl(options.key),
+      key: canonicalKey,
+      url: this.getUrl(canonicalKey),
       sizeBytes: Number(fileStats.size),
     };
   }
@@ -66,7 +81,7 @@ export class LocalDiskStorageDriver implements StorageDriver {
   }
 
   getUrl(key: string): string {
-    const cleanKey = key.replace(/\\/g, '/').replace(/^\/+/, '');
+    const cleanKey = this.normalizeKey(key);
     return `${this.publicUrlPrefix}/${cleanKey}`;
   }
 }

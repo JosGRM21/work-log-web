@@ -1,7 +1,7 @@
 import { AppError } from '../errors/app-error.js';
+import { VALID_WORK_STATUSES, isValidUuid, type WorkStatus } from '../../shared/types.js';
 
-export const VALID_WORK_STATUSES = ['pending', 'in_progress', 'completed'] as const;
-export type WorkStatus = (typeof VALID_WORK_STATUSES)[number];
+export { VALID_WORK_STATUSES, isValidUuid, type WorkStatus };
 
 export interface ListWorksQuery {
   status?: WorkStatus;
@@ -28,12 +28,6 @@ export interface UpdateWorkDTO {
   endDate?: Date | null;
 }
 
-const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export function isValidUuid(id: string): boolean {
-  return UUID_V4_REGEX.test(id);
-}
-
 export function parseDateOnly(val: unknown, fieldName: string): Date | null {
   if (val === undefined || val === null || val === '') {
     return null;
@@ -47,20 +41,27 @@ export function parseDateOnly(val: unknown, fieldName: string): Date | null {
   const trimmed = val.trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
   if (!match) {
-    const parsed = new Date(trimmed);
-    if (isNaN(parsed.getTime())) {
-      throw AppError.badRequest(
-        `El campo "${fieldName}" contiene una fecha inválida: "${val}". Use formato YYYY-MM-DD.`,
-      );
-    }
-    return parsed;
+    throw AppError.badRequest(
+      `El campo "${fieldName}" contiene una fecha inválida: "${val}". Use formato YYYY-MM-DD.`,
+    );
   }
 
-  const [, year, month, day] = match;
-  const utcDate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-  if (isNaN(utcDate.getTime())) {
-    throw AppError.badRequest(`El campo "${fieldName}" contiene valores de fecha inválidos.`);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const utcDate = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    isNaN(utcDate.getTime()) ||
+    utcDate.getUTCFullYear() !== year ||
+    utcDate.getUTCMonth() !== month - 1 ||
+    utcDate.getUTCDate() !== day
+  ) {
+    throw AppError.badRequest(
+      `El campo "${fieldName}" contiene valores de fecha calendario inválidos: "${val}".`,
+    );
   }
+
   return utcDate;
 }
 
@@ -130,6 +131,7 @@ export function validateCreateWorkInput(body: Record<string, unknown>): CreateWo
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
     throw AppError.badRequest('El título (title) es obligatorio y no puede estar vacío.');
   }
+
   const cleanTitle = title.trim();
   if (cleanTitle.length > 150) {
     throw AppError.badRequest('El título (title) excede el límite máximo de 150 caracteres.');

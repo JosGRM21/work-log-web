@@ -8,7 +8,19 @@ export const SESSION_EXPIRATION_MS = SESSION_EXPIRATION_DAYS * 24 * 60 * 60 * 10
 export interface SessionPayload {
   userId: string;
   email: string;
+  jti: string;
   exp: number;
+}
+
+const revokedTokenRegistry = new Map<string, number>();
+
+function purgeExpiredRevocations(): void {
+  const now = Date.now();
+  for (const [jti, exp] of revokedTokenRegistry.entries()) {
+    if (exp <= now) {
+      revokedTokenRegistry.delete(jti);
+    }
+  }
 }
 
 function getSessionSecret(): string {
@@ -26,6 +38,7 @@ export function createSessionToken(userId: string, email: string): string {
   const payload: SessionPayload = {
     userId,
     email,
+    jti: crypto.randomUUID(),
     exp: Date.now() + SESSION_EXPIRATION_MS,
   };
 
@@ -35,9 +48,22 @@ export function createSessionToken(userId: string, email: string): string {
   return `${payloadBase64}.${signature}`;
 }
 
+export function revokeSessionToken(token: string | undefined): void {
+  if (!token) return;
+  const payload = verifySessionToken(token);
+  if (payload?.jti) {
+    purgeExpiredRevocations();
+    revokedTokenRegistry.set(payload.jti, payload.exp);
+  }
+}
+
 export function verifySessionToken(token: string): SessionPayload | null {
   try {
-    const [payloadBase64, providedSignature] = token.split('.');
+    const parts = token.split('.');
+    if (parts.length !== 2) {
+      return null;
+    }
+    const [payloadBase64, providedSignature] = parts;
     if (!payloadBase64 || !providedSignature) {
       return null;
     }
@@ -61,7 +87,11 @@ export function verifySessionToken(token: string): SessionPayload | null {
     const payloadRaw = Buffer.from(payloadBase64, 'base64url').toString('utf8');
     const payload = JSON.parse(payloadRaw) as SessionPayload;
 
-    if (payload.exp < Date.now()) {
+    if (typeof payload.exp !== 'number' || payload.exp < Date.now()) {
+      return null;
+    }
+
+    if (payload.jti && revokedTokenRegistry.has(payload.jti)) {
       return null;
     }
 
@@ -76,7 +106,7 @@ export function getSessionCookieOptions(): CookieOptions {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
+    sameSite: 'lax',
     path: '/',
     maxAge: SESSION_EXPIRATION_MS,
   };

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../errors/app-error.js';
-import { workService } from '../services/work.service.js';
+import { workService as defaultWorkService, type WorkService } from '../services/work.service.js';
 import {
   parseListWorksQuery,
   validateCreateWorkInput,
@@ -8,10 +8,12 @@ import {
 } from '../validators/work.validator.js';
 
 export class WorkController {
+  constructor(private readonly service: WorkService = defaultWorkService) { }
+
   async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const parsedQuery = parseListWorksQuery(req.query as Record<string, unknown>);
-      const result = await workService.listWorks(parsedQuery);
+      const result = await this.service.listWorks(parsedQuery);
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -21,7 +23,7 @@ export class WorkController {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const result = await workService.getWorkById(String(id));
+      const result = await this.service.getWorkById(String(id));
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -34,7 +36,7 @@ export class WorkController {
         throw AppError.unauthorized('La solicitud requiere una sesión activa.');
       }
       const validatedInput = validateCreateWorkInput(req.body ?? {});
-      const result = await workService.createWork(req.user.id, validatedInput);
+      const result = await this.service.createWork(req.user.id, validatedInput);
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -45,7 +47,7 @@ export class WorkController {
     try {
       const { id } = req.params;
       const validatedInput = validateUpdateWorkInput(req.body ?? {});
-      const result = await workService.updateWork(String(id), validatedInput);
+      const result = await this.service.updateWork(String(id), validatedInput);
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -55,7 +57,7 @@ export class WorkController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      await workService.deleteWork(String(id));
+      await this.service.deleteWork(String(id));
       res.status(204).send();
     } catch (error) {
       next(error);
