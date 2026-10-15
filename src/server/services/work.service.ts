@@ -28,9 +28,14 @@ export class WorkService {
       this.db.workItem.count({ where: whereClause }),
       this.db.workItem.findMany({
         where: whereClause,
-        orderBy: {
-          referenceDate: query.order,
-        },
+        orderBy: [
+          {
+            referenceDate: query.order,
+          },
+          {
+            createdAt: query.order,
+          },
+        ],
         skip: query.offset,
         take: query.limit,
         include: {

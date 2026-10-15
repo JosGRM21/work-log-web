@@ -73,6 +73,7 @@ export class S3StorageDriver implements StorageDriver {
         Key: canonicalKey,
         Body: bodyToUpload,
         ContentType: options.mimeType,
+        CacheControl: 'public, max-age=31536000, immutable',
       },
     });
 

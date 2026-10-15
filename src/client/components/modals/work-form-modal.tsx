@@ -117,22 +117,22 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl border-border/80 bg-background shadow-2xl p-6">
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto rounded-[24px] border-white/10 bg-[#080c14] shadow-2xl p-6">
         <DialogHeader>
           <div className="flex items-center gap-2.5 mb-1">
-            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
+            <div className="p-2.5 rounded-xl bg-[#1a73e8]/15 text-[#4285F4] border border-[#1a73e8]/30">
               <Briefcase className="w-5 h-5 stroke-[2.2]" />
             </div>
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#4285F4]">
                 MIBITURVEN S.A.
               </span>
-              <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
+              <DialogTitle className="text-xl font-medium tracking-tight text-white font-heading">
                 {isEditing ? 'Editar Ficha Técnica de Trabajo' : 'Registrar Nuevo Trabajo Técnico'}
               </DialogTitle>
             </div>
           </div>
-          <DialogDescription className="text-xs text-muted-foreground">
+          <DialogDescription className="text-xs text-[#9aa0a6]">
             {isEditing
               ? 'Actualice los datos técnicos, cronograma o estado operativo de este proyecto.'
               : 'Complete la ficha técnica para registrar un nuevo proyecto u obra en la bitácora institucional.'}
@@ -141,10 +141,10 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5 mt-2">
           {/* Sección 1: Identificación */}
-          <div className="flex flex-col gap-1.5 p-4 rounded-xl bg-muted/20 border border-border/70">
+          <div className="flex flex-col gap-1.5 p-4 rounded-2xl bg-white/[0.03] border border-white/10">
             <Label
               htmlFor="work-title"
-              className="text-xs font-bold uppercase tracking-wider text-foreground"
+              className="text-xs font-semibold uppercase tracking-wider text-white"
             >
               Título o Denominación de la Obra *
             </Label>
@@ -155,17 +155,17 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
               onChange={(e) => setTitle(e.target.value)}
               required
               maxLength={150}
-              className="bg-card/70 border-border/80 focus-visible:ring-amber-500/30"
+              className="bg-white/[0.04] border-white/10 text-white placeholder:text-[#9aa0a6] rounded-xl focus-visible:ring-2 focus-visible:ring-[#4285F4]/40"
             />
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-[#9aa0a6]">
               Máximo 150 caracteres (campo obligatorio)
             </span>
           </div>
 
           {/* Sección 2: Estado y Cronograma */}
-          <div className="flex flex-col gap-3 p-4 rounded-xl bg-muted/20 border border-border/70">
-            <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-amber-500" />
+          <div className="flex flex-col gap-3 p-4 rounded-2xl bg-white/[0.03] border border-white/10">
+            <span className="text-xs font-semibold uppercase tracking-wider text-white flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-[#4285F4]" />
               Estado y Fechas Operativas
             </span>
 
@@ -261,12 +261,12 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
           </div>
 
           {/* Sección 3: Descripción Técnica */}
-          <div className="flex flex-col gap-1.5 p-4 rounded-xl bg-muted/20 border border-border/70">
+          <div className="flex flex-col gap-1.5 p-4 rounded-2xl bg-white/[0.03] border border-white/10">
             <Label
               htmlFor="work-description"
-              className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5"
+              className="text-xs font-semibold uppercase tracking-wider text-white flex items-center gap-1.5"
             >
-              <FileText className="w-3.5 h-3.5 text-amber-500" />
+              <FileText className="w-3.5 h-3.5 text-[#4285F4]" />
               Descripción Técnica y Alcance (Opcional)
             </Label>
             <Textarea
@@ -275,12 +275,12 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
               rows={4}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="bg-card/70 border-border/80 focus-visible:ring-amber-500/30"
+              className="bg-white/[0.04] border-white/10 text-white placeholder:text-[#9aa0a6] rounded-xl focus-visible:ring-2 focus-visible:ring-[#4285F4]/40"
             />
           </div>
 
           {apiError && (
-            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium">
+            <div className="p-3 rounded-xl bg-destructive/15 border border-destructive/30 text-red-400 text-xs font-medium">
               {apiError}
             </div>
           )}
@@ -291,14 +291,14 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
               variant="outline"
               onClick={onClose}
               disabled={isSubmitting}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto rounded-full border-white/10 text-[#9aa0a6] hover:text-white hover:bg-white/[0.06]"
             >
               Cancelar
             </Button>
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold shadow-xs"
+              className="w-full sm:w-auto bg-[#1a73e8] hover:bg-[#1557b0] text-white font-medium rounded-full shadow-[0_0_15px_rgba(26,115,232,0.35)] transition-all"
             >
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isEditing ? 'Guardar Cambios' : 'Registrar Trabajo'}

@@ -32,6 +32,9 @@ const sslCa = process.env.DATABASE_SSL_CA;
 
 const pool = new Pool({
   connectionString,
+  max: Number(process.env.DATABASE_POOL_MAX) || 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
   ...(isSsl
     ? {
         ssl: {

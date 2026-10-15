@@ -1,8 +1,6 @@
 import React from 'react';
 import type { WorkStatus } from '../../../shared/types.js';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ArrowUpDown, LayoutGrid, ListTree, Search, X, Filter } from 'lucide-react';
+import { ArrowUpDown, LayoutGrid, ListTree } from 'lucide-react';
 
 export type ViewMode = 'grid' | 'timeline';
 
@@ -11,9 +9,7 @@ interface FeedFiltersProps {
   onStatusChange: (status: WorkStatus | 'all') => void;
   currentOrder: 'desc' | 'asc';
   onOrderToggle: () => void;
-  totalResults: number;
-  searchTerm: string;
-  onSearchChange: (value: string) => void;
+  totalResults?: number;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   counts?: {
@@ -29,138 +25,149 @@ export const FeedFilters: React.FC<FeedFiltersProps> = ({
   onStatusChange,
   currentOrder,
   onOrderToggle,
-  totalResults,
-  searchTerm,
-  onSearchChange,
+  totalResults: _totalResults,
   viewMode,
   onViewModeChange,
   counts,
 }) => {
-  const filters: Array<{ id: WorkStatus | 'all'; label: string; count?: number }> = [
-    { id: 'all', label: 'Todos', count: counts?.all },
-    { id: 'completed', label: 'Terminados', count: counts?.completed },
-    { id: 'in_progress', label: 'En Curso', count: counts?.in_progress },
-    { id: 'pending', label: 'Por Realizar', count: counts?.pending },
-  ];
+  const filters: Array<{
+    id: WorkStatus | 'all';
+    label: string;
+    count?: number;
+    dotColor: string;
+  }> = [
+      {
+        id: 'all',
+        label: 'Todos',
+        count: counts?.all,
+        dotColor: 'bg-[#4285F4]',
+      },
+      {
+        id: 'completed',
+        label: 'Terminados',
+        count: counts?.completed,
+        dotColor: 'bg-[#34a853]',
+      },
+      {
+        id: 'in_progress',
+        label: 'En curso',
+        count: counts?.in_progress,
+        dotColor: 'bg-[#fbbc04]',
+      },
+      {
+        id: 'pending',
+        label: 'Por realizar',
+        count: counts?.pending,
+        dotColor: 'bg-[#9aa0a6]',
+      },
+    ];
 
   return (
-    <div className="flex flex-col gap-4 py-2 border-b border-border/80">
-      {/* Fila Superior: Búsqueda y Modos de Vista */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        {/* Input de Búsqueda en vivo */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-          <Input
-            type="text"
-            placeholder="Buscar por nombre de obra o trabajo..."
-            value={searchTerm}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-9 pr-8 h-10 text-xs sm:text-sm bg-card/60 border-border/80 rounded-xl focus-visible:ring-amber-500/30"
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              onClick={() => onSearchChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
-              title="Limpiar búsqueda"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+    <div className="relative w-full pt-2 pb-6">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Izquierda: Cápsula segmentada de filtros por estado */}
+        <div className="flex items-center overflow-x-auto no-scrollbar pb-1 lg:pb-0">
+          <div
+            role="tablist"
+            aria-label="Filtrar obras por estado"
+            className="inline-flex items-center gap-1 p-1.5 rounded-full bg-[#090d16] border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+          >
+            {filters.map((filter) => {
+              const isActive = currentStatus === filter.id;
+              return (
+                <button
+                  key={filter.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => onStatusChange(filter.id)}
+                  className={`group relative h-9 px-4 rounded-full text-xs sm:text-[13px] font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap cursor-pointer select-none ${isActive
+                      ? 'bg-[#1a73e8] text-white shadow-[0_2px_14px_rgba(26,115,232,0.4)]'
+                      : 'text-[#9aa0a6] hover:text-white hover:bg-white/[0.05]'
+                    }`}
+                >
+                  {/* Indicador de color del estado */}
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full transition-transform duration-200 ${isActive
+                        ? 'bg-white scale-110'
+                        : `${filter.dotColor} opacity-80 group-hover:opacity-100`
+                      }`}
+                  />
+
+                  <span>{filter.label}</span>
+
+                  {/* Contador numérico */}
+                  {filter.count !== undefined && (
+                    <span
+                      className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] tabular-nums font-medium transition-colors ${isActive
+                          ? 'bg-black/25 text-white'
+                          : 'bg-white/[0.06] text-[#80868b] group-hover:text-[#c4c7c5]'
+                        }`}
+                    >
+                      {filter.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Controles: Orden cronológico y Selector de Vista (Grid vs Timeline) */}
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            variant="outline"
-            size="sm"
+        {/* Derecha: Orden cronológico y Selector de vista (solo iconos) */}
+        <div className="flex items-center justify-end gap-2.5">
+          {/* Botón de Orden Cronológico */}
+          <button
+            type="button"
             onClick={onOrderToggle}
-            className="h-10 text-xs text-muted-foreground hover:text-foreground gap-1.5 rounded-xl border-border/80 bg-card/60 shadow-xs"
             title="Invertir orden cronológico"
+            className="group h-9 px-3.5 rounded-full bg-[#090d16] border border-white/[0.08] hover:border-[#4285F4]/40 hover:bg-white/[0.04] text-xs font-medium text-[#c4c7c5] hover:text-white transition-all inline-flex items-center gap-2 cursor-pointer select-none"
           >
-            <ArrowUpDown className="w-3.5 h-3.5 text-amber-500" />
-            <span className="hidden sm:inline">
-              {currentOrder === 'desc' ? 'Más recientes' : 'Más antiguos'}
-            </span>
-            <span className="sm:hidden">{currentOrder === 'desc' ? 'Recientes' : 'Antiguos'}</span>
-          </Button>
+            <ArrowUpDown className="w-3.5 h-3.5 text-[#669df6] transition-transform duration-200 group-hover:scale-110" />
+            <span className="hidden sm:inline">{currentOrder === 'desc' ? 'Más recientes' : 'Más antiguos'}</span>
+          </button>
 
-          {/* Selector de Modo de Vista */}
-          <div className="flex items-center p-1 bg-muted/60 rounded-xl border border-border/60">
-            <Button
-              variant={viewMode === 'grid' ? 'default' : 'ghost'}
-              size="icon"
+          {/* Conmutador de Vista (Cuadrícula / Cronología) - Solo iconos */}
+          <div
+            role="group"
+            aria-label="Modo de visualización"
+            className="inline-flex items-center p-1 rounded-full bg-[#090d16] border border-white/[0.08]"
+          >
+            <button
+              type="button"
               onClick={() => onViewModeChange('grid')}
-              className={`h-8 w-8 rounded-lg ${
+              title="Vista en cuadrícula de tarjetas"
+              aria-label="Vista en cuadrícula"
+              className={`h-7 w-7 rounded-full inline-flex items-center justify-center transition-all duration-200 cursor-pointer select-none ${
                 viewMode === 'grid'
-                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-white/[0.14] text-white shadow-xs'
+                  : 'text-[#80868b] hover:text-[#e8eaed] hover:bg-white/[0.04]'
               }`}
-              title="Vista Cuadrícula de Tarjetas"
-              aria-label="Vista cuadrícula"
             >
-              <LayoutGrid className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'timeline' ? 'default' : 'ghost'}
-              size="icon"
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              type="button"
               onClick={() => onViewModeChange('timeline')}
-              className={`h-8 w-8 rounded-lg ${
+              title="Vista en línea de tiempo cronológica"
+              aria-label="Vista en línea de tiempo"
+              className={`h-7 w-7 rounded-full inline-flex items-center justify-center transition-all duration-200 cursor-pointer select-none ${
                 viewMode === 'timeline'
-                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-white/[0.14] text-white shadow-xs'
+                  : 'text-[#80868b] hover:text-[#e8eaed] hover:bg-white/[0.04]'
               }`}
-              title="Vista Línea de Tiempo Cronológica"
-              aria-label="Vista línea de tiempo"
             >
-              <ListTree className="w-4 h-4" />
-            </Button>
+              <ListTree className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Fila Inferior: Pestañas de Estados con Badges de Conteo */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-muted/50 rounded-xl border border-border/50">
-          {filters.map((filter) => {
-            const isActive = currentStatus === filter.id;
-            return (
-              <Button
-                key={filter.id}
-                variant={isActive ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => onStatusChange(filter.id)}
-                className={`h-8 rounded-lg text-xs transition-all gap-1.5 ${
-                  isActive
-                    ? 'bg-card text-foreground font-semibold shadow-xs border border-border/80'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <span>{filter.label}</span>
-                {filter.count !== undefined && (
-                  <span
-                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                      isActive
-                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold'
-                        : 'bg-muted text-muted-foreground'
-                    }`}
-                  >
-                    {filter.count}
-                  </span>
-                )}
-              </Button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-          <Filter className="w-3.5 h-3.5 text-amber-500" />
-          <span>
-            <strong className="text-foreground">{totalResults}</strong>{' '}
-            {totalResults === 1 ? 'resultado' : 'resultados'}
-          </span>
-        </div>
-      </div>
+      {/* Línea divisoria inferior degradada sutil */}
+      <div
+        className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/[0.10] to-transparent"
+        aria-hidden="true"
+      />
     </div>
   );
 };

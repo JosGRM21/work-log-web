@@ -1,124 +1,185 @@
-import React from 'react';
-import { Card } from '@/components/ui/card';
-import { Briefcase, CheckCircle2, Clock, Camera, Shield, Sparkles } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Briefcase, CheckCircle2, Clock, Camera } from 'lucide-react';
 
 interface HeroSectionProps {
   totalWorks: number;
   completedCount: number;
   inProgressCount: number;
   totalMediaCount: number;
+  isLoading?: boolean;
 }
+
+interface AnimatedMetricValueProps {
+  value: number;
+  duration?: number;
+  delay?: number;
+  isLoading?: boolean;
+}
+
+/**
+ * Componente de conteo animado con curva easeOutExpo y entrada suave (blur + fade)
+ */
+const AnimatedMetricValue: React.FC<AnimatedMetricValueProps> = ({
+  value,
+  duration = 1400,
+  delay = 0,
+  isLoading = false,
+}) => {
+  const [displayValue, setDisplayValue] = useState(0);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (isLoading) {
+      setIsVisible(false);
+      setDisplayValue(0);
+      return;
+    }
+
+    let frameId: number;
+    let startTime: number | null = null;
+
+    const timerId = window.setTimeout(() => {
+      setIsVisible(true);
+
+      if (value === 0) {
+        setDisplayValue(0);
+        return;
+      }
+
+      const animate = (timestamp: number) => {
+        if (!startTime) startTime = timestamp;
+        const elapsed = timestamp - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Curva easeOutExpo para un frenado elegante al llegar al número final
+        const easedProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+        setDisplayValue(Math.round(easedProgress * value));
+
+        if (progress < 1) {
+          frameId = window.requestAnimationFrame(animate);
+        } else {
+          setDisplayValue(value);
+        }
+      };
+
+      frameId = window.requestAnimationFrame(animate);
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timerId);
+      if (frameId) window.cancelAnimationFrame(frameId);
+    };
+  }, [value, duration, delay, isLoading]);
+
+  return (
+    <span
+      className={`inline-block tabular-nums transition-all duration-700 ease-out ${isVisible
+          ? 'opacity-100 translate-y-0 blur-0'
+          : 'opacity-0 translate-y-2 blur-[4px]'
+        }`}
+    >
+      {displayValue.toLocaleString('es-ES')}
+    </span>
+  );
+};
 
 export const HeroSection: React.FC<HeroSectionProps> = ({
   totalWorks,
   completedCount,
   inProgressCount,
   totalMediaCount,
+  isLoading = false,
 }) => {
+  const kpiItems = [
+    {
+      id: 'total',
+      label: 'Total de obras',
+      value: totalWorks,
+      icon: Briefcase,
+      accentText: 'text-[#8ab4f8]',
+    },
+    {
+      id: 'completed',
+      label: 'Concluidos',
+      value: completedCount,
+      icon: CheckCircle2,
+      accentText: 'text-[#81c995]',
+    },
+    {
+      id: 'in_progress',
+      label: 'En curso',
+      value: inProgressCount,
+      icon: Clock,
+      accentText: 'text-[#fdd663]',
+    },
+    {
+      id: 'media',
+      label: 'Evidencias',
+      value: totalMediaCount,
+      icon: Camera,
+      accentText: 'text-[#c58af9]',
+    },
+  ];
+
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-border/80 bg-gradient-to-br from-card via-card/90 to-amber-950/10 p-6 sm:p-8 lg:p-10 shadow-lg shadow-black/5">
-      {/* Efectos decorativos de fondo */}
-      <div className="absolute top-0 right-0 -mt-16 -mr-16 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 left-1/3 -mb-20 w-60 h-60 rounded-full bg-emerald-500/5 blur-3xl pointer-events-none" />
+    <div className="relative w-full flex flex-col items-center">
+      {/* Bloque Superior: Tipografía calibrada al estilo Google One */}
+      <div className="flex flex-col items-center text-center gap-5 max-w-4xl mx-auto px-2 mb-14 sm:mb-20">
+        {/* Titular Principal: Blanco puro con acento azul Google AI y peso equilibrado */}
+        <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-[64px] font-semibold tracking-[-0.025em] text-white leading-[1.1] font-heading">
+          Registro de{' '}
+          <span className="text-[#669df6] block sm:inline font-semibold">
+            Trabajos y Obras
+          </span>
+        </h1>
 
-      <div className="relative z-10 flex flex-col gap-6">
-        {/* Badge Institucional y Título */}
-        <div className="flex flex-col items-start gap-3 max-w-3xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-600 dark:text-amber-400 text-xs font-semibold tracking-wide uppercase">
-            <Shield className="w-3.5 h-3.5 text-amber-500" />
-            <span>Cliente: MIBITURVEN S.A. — Minería Binacional Turquía-Venezuela</span>
-            <Sparkles className="w-3 h-3 text-amber-400 hidden sm:inline" />
-          </div>
+        {/* Subtítulo descriptivo con contraste limpio */}
+        <p className="text-sm sm:text-base md:text-[17px] text-[#c4c7c5] leading-relaxed max-w-2xl mx-auto font-sans font-normal">
+          Catálogo de servicios técnicos y mantenimiento realizados para MIBITURVEN, respaldados con registro fotográfico y audiovisual.
+        </p>
+      </div>
 
-          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight text-foreground leading-tight">
-            Bitácora y Dossier de{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600">
-              Obras Industriales
-            </span>
-          </h1>
+      {/* Franja de Métricas (KPIs) Abierta: Sin recuadros tradicionales */}
+      <div className="w-full max-w-5xl mx-auto pt-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-y-10 gap-x-6 lg:gap-0">
+          {kpiItems.map((item, index) => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.id}
+                className="group relative flex flex-col items-center text-center px-4 sm:px-8 transition-transform duration-300 hover:-translate-y-0.5"
+              >
+                {/* Divisor vertical sutil (solo entre columnas en pantallas grandes) */}
+                {index > 0 && (
+                  <div
+                    className="hidden lg:block absolute left-0 top-1 bottom-1 w-px bg-gradient-to-b from-transparent via-white/[0.12] to-transparent"
+                    aria-hidden="true"
+                  />
+                )}
 
-          <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
-            Registro oficial y cronológico de proyectos, servicios técnicos, montajes y
-            mantenimientos ejecutados para <strong>MIBITURVEN S.A.</strong> Cada intervención cuenta
-            con respaldo documental mediante evidencias fotográficas y audiovisuales fechadas.
-          </p>
-        </div>
+                {/* Encabezado del KPI: Ícono + Etiqueta */}
+                <div className="flex items-center justify-center gap-2 mb-2.5">
+                  <Icon
+                    className={`w-3.5 h-3.5 ${item.accentText} opacity-80 group-hover:opacity-100 transition-opacity`}
+                  />
+                  <span className="text-xs sm:text-[13px] font-medium tracking-wide text-[#e8eaed] group-hover:text-white transition-colors">
+                    {item.label}
+                  </span>
+                </div>
 
-        {/* Grid de Métricas / KPIs Operativos */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 pt-2">
-          {/* KPI 1: Total Trabajos */}
-          <Card className="p-4 sm:p-5 bg-card/70 border-border/70 backdrop-blur-md flex flex-col justify-between hover:border-amber-500/30 transition-all">
-            <div className="flex items-center justify-between text-muted-foreground mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider">Total Obras</span>
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center">
-                <Briefcase className="w-4 h-4" />
+                {/* Número Principal Animado */}
+                <div className="text-4xl sm:text-5xl md:text-[52px] font-semibold tracking-[-0.03em] text-white font-heading leading-none my-1 flex justify-center w-full">
+                  <AnimatedMetricValue
+                    value={item.value}
+                    delay={index * 110}
+                    isLoading={isLoading}
+                  />
+                </div>
               </div>
-            </div>
-            <div>
-              <span className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
-                {totalWorks}
-              </span>
-              <span className="text-[11px] text-muted-foreground block mt-0.5">
-                Proyectos en bitácora
-              </span>
-            </div>
-          </Card>
-
-          {/* KPI 2: Concluidos */}
-          <Card className="p-4 sm:p-5 bg-card/70 border-border/70 backdrop-blur-md flex flex-col justify-between hover:border-emerald-500/30 transition-all">
-            <div className="flex items-center justify-between text-muted-foreground mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider">Concluidos</span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-            </div>
-            <div>
-              <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight">
-                {completedCount}
-              </span>
-              <span className="text-[11px] text-muted-foreground block mt-0.5">
-                Trabajos entregados
-              </span>
-            </div>
-          </Card>
-
-          {/* KPI 3: En Proceso */}
-          <Card className="p-4 sm:p-5 bg-card/70 border-border/70 backdrop-blur-md flex flex-col justify-between hover:border-cyan-500/30 transition-all">
-            <div className="flex items-center justify-between text-muted-foreground mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider">En Curso</span>
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-500 flex items-center justify-center">
-                <Clock className="w-4 h-4" />
-              </div>
-            </div>
-            <div>
-              <span className="text-2xl sm:text-3xl font-extrabold text-cyan-600 dark:text-cyan-400 tracking-tight">
-                {inProgressCount}
-              </span>
-              <span className="text-[11px] text-muted-foreground block mt-0.5">
-                En desarrollo activo
-              </span>
-            </div>
-          </Card>
-
-          {/* KPI 4: Evidencias Multimedia */}
-          <Card className="p-4 sm:p-5 bg-card/70 border-border/70 backdrop-blur-md flex flex-col justify-between hover:border-amber-500/30 transition-all">
-            <div className="flex items-center justify-between text-muted-foreground mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider">Evidencias</span>
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center">
-                <Camera className="w-4 h-4" />
-              </div>
-            </div>
-            <div>
-              <span className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
-                {totalMediaCount}
-              </span>
-              <span className="text-[11px] text-muted-foreground block mt-0.5">
-                Fotos y videos cargados
-              </span>
-            </div>
-          </Card>
+            );
+          })}
         </div>
       </div>
-    </section>
+    </div>
   );
 };

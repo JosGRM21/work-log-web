@@ -49,22 +49,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md rounded-2xl border-border/80 bg-background shadow-2xl p-6">
+      <DialogContent className="sm:max-w-md rounded-[24px] border-white/10 bg-[#080c14] shadow-2xl p-6">
         <DialogHeader>
           <div className="flex items-center gap-2.5 mb-1">
-            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
+            <div className="p-2.5 rounded-xl bg-[#1a73e8]/15 text-[#4285F4] border border-[#1a73e8]/30">
               <Lock className="w-5 h-5 stroke-[2.2]" />
             </div>
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#4285F4] flex items-center gap-1">
                 <Shield className="w-3 h-3" /> MIBITURVEN S.A.
               </span>
-              <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
+              <DialogTitle className="text-xl font-medium tracking-tight text-white font-heading">
                 Acceso Administrativo
               </DialogTitle>
             </div>
           </div>
-          <DialogDescription className="text-xs text-muted-foreground">
+          <DialogDescription className="text-xs text-[#9aa0a6]">
             Ingrese sus credenciales autorizadas para gestionar trabajos y evidencias técnicas de
             las obras realizadas.
           </DialogDescription>
@@ -72,7 +72,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           <div className="grid gap-1.5">
-            <Label htmlFor="login-identifier" className="text-xs font-semibold text-foreground">
+            <Label htmlFor="login-identifier" className="text-xs font-medium text-white">
               Correo Electrónico o Usuario
             </Label>
             <Input
@@ -84,12 +84,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               autoComplete="username"
               required
               autoFocus
-              className="bg-card/70 border-border/80 focus-visible:ring-amber-500/30"
+              className="bg-white/[0.04] border-white/10 text-white placeholder:text-[#9aa0a6] rounded-xl focus-visible:ring-2 focus-visible:ring-[#4285F4]/40"
             />
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="login-password" className="text-xs font-semibold text-foreground">
+            <Label htmlFor="login-password" className="text-xs font-medium text-white">
               Contraseña
             </Label>
             <Input
@@ -100,12 +100,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               placeholder="••••••••••••"
               autoComplete="current-password"
               required
-              className="bg-card/70 border-border/80 focus-visible:ring-amber-500/30"
+              className="bg-white/[0.04] border-white/10 text-white placeholder:text-[#9aa0a6] rounded-xl focus-visible:ring-2 focus-visible:ring-[#4285F4]/40"
             />
           </div>
 
           {errorMsg && (
-            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium">
+            <div className="p-3 rounded-xl bg-destructive/15 border border-destructive/30 text-red-400 text-xs font-medium">
               {errorMsg}
             </div>
           )}
@@ -116,14 +116,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               variant="outline"
               onClick={onClose}
               disabled={isSubmitting}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto rounded-full border-white/10 text-[#9aa0a6] hover:text-white hover:bg-white/[0.06]"
             >
               Cancelar
             </Button>
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold shadow-xs"
+              className="w-full sm:w-auto bg-[#1a73e8] hover:bg-[#1557b0] text-white font-medium rounded-full shadow-[0_0_15px_rgba(26,115,232,0.35)] transition-all"
             >
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Iniciar Sesión

@@ -7,16 +7,35 @@ import { HeroSection } from './components/feed/hero-section.js';
 import { FeedFilters, type ViewMode } from './components/feed/feed-filters.js';
 import { WorkCard } from './components/feed/work-card.js';
 import { WorkTimelineItem } from './components/feed/work-timeline-item.js';
-import { WorkDetailModal } from './components/modals/work-detail-modal.js';
-import { WorkFormModal } from './components/modals/work-form-modal.js';
-import { ConfirmModal } from './components/modals/confirm-modal.js';
-import { LoginModal } from './components/modals/login-modal.js';
-import { Footer } from './components/layout/footer.js';
+// Modales cargados dinámicamente mediante code-splitting
+const WorkDetailModal = React.lazy(() =>
+  import('./components/modals/work-detail-modal.js').then((m) => ({ default: m.WorkDetailModal })),
+);
+const WorkFormModal = React.lazy(() =>
+  import('./components/modals/work-form-modal.js').then((m) => ({ default: m.WorkFormModal })),
+);
+const ConfirmModal = React.lazy(() =>
+  import('./components/modals/confirm-modal.js').then((m) => ({ default: m.ConfirmModal })),
+);
+const LoginModal = React.lazy(() =>
+  import('./components/modals/login-modal.js').then((m) => ({ default: m.LoginModal })),
+);
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { AlertCircle, FolderX, ChevronLeft, ChevronRight, SearchX } from 'lucide-react';
+import { AlertCircle, FolderX } from 'lucide-react';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
+
+const ITEMS_PER_PAGE = 9;
 
 export const App: React.FC = () => {
   const {
@@ -32,11 +51,9 @@ export const App: React.FC = () => {
     order,
     setOrder,
     refetch,
-  } = useWorks({ limit: 18 });
+  } = useWorks({ limit: ITEMS_PER_PAGE });
 
-  const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
-
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
@@ -44,13 +61,6 @@ export const App: React.FC = () => {
   const [workToEdit, setWorkToEdit] = useState<WorkItemDetail | null>(null);
   const [workIdToDelete, setWorkIdToDelete] = useState<string | null>(null);
   const [isDeletingWork, setIsDeletingWork] = useState(false);
-
-  // Filtrado local por término de búsqueda
-  const displayWorks = useMemo(() => {
-    if (!searchTerm.trim()) return works;
-    const query = searchTerm.toLowerCase().trim();
-    return works.filter((w) => w.title.toLowerCase().includes(query));
-  }, [works, searchTerm]);
 
   // Métricas para los KPIs del Hero
   const metrics = useMemo(() => {
@@ -72,6 +82,35 @@ export const App: React.FC = () => {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const currentPage = Math.floor(offset / limit) + 1;
+  const fromRecord = offset + 1;
+  const toRecord = Math.min(offset + works.length, total);
+
+  const handlePageChange = (page: number) => {
+    if (page < 1 || page > totalPages || page === currentPage) return;
+    setOffset((page - 1) * limit);
+    const catalogElement = document.getElementById('catalogo-obras');
+    if (catalogElement) {
+      catalogElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const getPageNumbers = () => {
+    const pages: (number | 'ellipsis')[] = [];
+    if (totalPages <= 5) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      if (currentPage <= 3) {
+        pages.push(1, 2, 3, 4, 'ellipsis', totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1, 'ellipsis', totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+      } else {
+        pages.push(1, 'ellipsis', currentPage - 1, currentPage, currentPage + 1, 'ellipsis', totalPages);
+      }
+    }
+    return pages;
+  };
 
   const handleConfirmDeleteWork = async () => {
     if (!workIdToDelete) return;
@@ -98,29 +137,35 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col text-foreground antialiased selection:bg-amber-500/20 selection:text-amber-400">
+    <div className="min-h-screen bg-black text-white relative overflow-x-hidden flex flex-col antialiased selection:bg-[#1a73e8]/30 selection:text-blue-100">
       {/* Barra de Navegación */}
       <Navbar onOpenLogin={() => setIsLoginOpen(true)} onOpenCreate={() => setIsCreateOpen(true)} />
 
-      {/* Contenido Principal */}
-      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 flex-1 flex flex-col gap-8">
-        {/* Hero Section con Identidad MIBITURVEN & KPIs */}
-        <HeroSection
-          totalWorks={metrics.total}
-          completedCount={metrics.completed}
-          inProgressCount={metrics.inProgress}
-          totalMediaCount={metrics.totalMedia}
-        />
+      {/* Sección inicial (Hero) */}
+      <section className="google-one-hero w-full pt-20 sm:pt-28 pb-10 sm:pb-14 px-4 sm:px-6 flex flex-col items-center">
+        <div className="max-w-7xl w-full mx-auto relative z-10">
+          <HeroSection
+            totalWorks={metrics.total}
+            completedCount={metrics.completed}
+            inProgressCount={metrics.inProgress}
+            totalMediaCount={metrics.totalMedia}
+            isLoading={isLoading}
+          />
+        </div>
+      </section>
 
-        {/* Barra de Filtros, Búsqueda y Modos de Vista */}
+      {/* Contenido Principal (Resto de la página en negro puro #000000 continuo) */}
+      <main
+        id="catalogo-obras"
+        className="bg-black max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 flex-1 flex flex-col gap-8 relative z-10"
+      >
+        {/* Barra de Filtros, Ordenamiento y Modos de Vista */}
         <FeedFilters
           currentStatus={statusFilter}
           onStatusChange={setStatusFilter}
           currentOrder={order}
           onOrderToggle={() => setOrder(order === 'desc' ? 'asc' : 'desc')}
-          totalResults={displayWorks.length}
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
+          totalResults={works.length}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           counts={{
@@ -131,22 +176,22 @@ export const App: React.FC = () => {
           }}
         />
 
-        {/* Estado de Carga (Skeletons Modernos) */}
+        {/* Estado de Carga (Skeletons alineados al nuevo diseño de tarjetas) */}
         {isLoading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 py-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 py-2">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div
                 key={i}
-                className="flex flex-col gap-3 rounded-2xl border border-border/80 p-4 bg-card/60"
+                className="flex flex-col justify-between rounded-[28px] border border-white/[0.08] p-2.5 bg-gradient-to-b from-[#0b1936]/35 via-[#070b14] to-[#04060b]"
               >
-                <Skeleton className="w-full aspect-video rounded-xl bg-muted/70" />
-                <div className="space-y-2 pt-2">
-                  <Skeleton className="h-4 w-1/3 bg-muted/60" />
-                  <Skeleton className="h-5 w-4/5 bg-muted/70" />
-                </div>
-                <div className="pt-4 border-t border-border/60 flex justify-between">
-                  <Skeleton className="h-4 w-20 bg-muted/50" />
-                  <Skeleton className="h-4 w-16 bg-muted/50" />
+                <Skeleton className="w-full aspect-video rounded-[20px] bg-white/[0.04]" />
+                <div className="px-3.5 pt-4 pb-3 space-y-3">
+                  <Skeleton className="h-3.5 w-2/5 rounded-full bg-white/[0.04]" />
+                  <Skeleton className="h-5 w-4/5 rounded-full bg-white/[0.07]" />
+                  <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between">
+                    <Skeleton className="h-3.5 w-28 rounded-full bg-white/[0.04]" />
+                    <Skeleton className="h-8 w-8 rounded-full bg-white/[0.05]" />
+                  </div>
                 </div>
               </div>
             ))}
@@ -155,7 +200,7 @@ export const App: React.FC = () => {
 
         {/* Estado de Error */}
         {!isLoading && error && (
-          <Card className="p-8 bg-destructive/10 border-destructive/20 text-destructive text-center flex flex-col items-center gap-3 max-w-lg mx-auto rounded-2xl">
+          <Card className="p-8 bg-destructive/10 border-destructive/20 text-destructive text-center flex flex-col items-center gap-3 max-w-lg mx-auto rounded-[28px]">
             <AlertCircle className="w-10 h-10" />
             <h3 className="text-base font-bold">Error de Conexión</h3>
             <p className="text-sm font-medium">{error}</p>
@@ -163,46 +208,23 @@ export const App: React.FC = () => {
               variant="outline"
               size="sm"
               onClick={() => void refetch()}
-              className="mt-2 text-xs border-destructive/30 hover:bg-destructive hover:text-white"
+              className="mt-2 text-xs border-destructive/30 hover:bg-destructive hover:text-white rounded-full"
             >
               Reintentar Carga
             </Button>
           </Card>
         )}
 
-        {/* Estado Vacío por Búsqueda */}
-        {!isLoading && !error && displayWorks.length === 0 && searchTerm.trim() !== '' && (
-          <Card className="py-16 px-6 text-center border-dashed border-border/80 bg-card/50 flex flex-col items-center justify-center max-w-md mx-auto my-6 rounded-2xl">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-3">
-              <SearchX className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-foreground mb-1">
-              No se encontraron coincidencias
-            </h3>
-            <p className="text-xs text-muted-foreground max-w-xs mb-4">
-              No existen obras registradas que coincidan con &quot;{searchTerm}&quot;.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSearchTerm('')}
-              className="rounded-xl"
-            >
-              Limpiar Búsqueda
-            </Button>
-          </Card>
-        )}
-
         {/* Estado Vacío General */}
-        {!isLoading && !error && displayWorks.length === 0 && searchTerm.trim() === '' && (
-          <Card className="py-16 px-6 text-center border-dashed border-border/80 bg-card/50 flex flex-col items-center justify-center max-w-md mx-auto my-6 rounded-2xl">
-            <div className="w-14 h-14 rounded-2xl bg-muted/60 flex items-center justify-center text-muted-foreground mb-3">
-              <FolderX className="w-7 h-7 text-amber-500/80" />
+        {!isLoading && !error && works.length === 0 && (
+          <div className="py-16 px-6 text-center border border-white/[0.08] bg-gradient-to-b from-[#0b1936]/30 via-[#070b14] to-[#04060b] flex flex-col items-center justify-center max-w-md mx-auto my-6 rounded-[28px]">
+            <div className="w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mb-3">
+              <FolderX className="w-6 h-6 text-[#669df6]" />
             </div>
-            <h3 className="text-base font-bold text-foreground mb-1">
+            <h3 className="text-base font-medium text-white mb-1">
               No hay trabajos disponibles
             </h3>
-            <p className="text-xs text-muted-foreground max-w-xs mb-4">
+            <p className="text-xs text-[#9aa0a6] max-w-xs mb-5 leading-relaxed">
               {statusFilter !== 'all'
                 ? 'No se encontraron registros en el estado seleccionado actualmente.'
                 : 'Aún no se han registrado obras técnicas en la bitácora de MIBITURVEN S.A.'}
@@ -212,117 +234,146 @@ export const App: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => setStatusFilter('all')}
-                className="rounded-xl border-amber-500/30 text-amber-500 hover:bg-amber-500/10"
+                className="rounded-full border-white/15 text-[#8ab4f8] hover:bg-[#1a73e8]/15"
               >
                 Ver todos los proyectos
               </Button>
             )}
-          </Card>
+          </div>
         )}
 
         {/* Lista / Grid de Trabajos */}
-        {!isLoading && !error && displayWorks.length > 0 && (
+        {!isLoading && !error && works.length > 0 && (
           <>
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {displayWorks.map((work) => (
+                {works.map((work) => (
                   <WorkCard key={work.id} work={work} onClick={() => setSelectedWorkId(work.id)} />
                 ))}
               </div>
             ) : (
               <div className="flex flex-col py-2 max-w-4xl mx-auto w-full">
-                {displayWorks.map((work, index) => (
+                {works.map((work, index) => (
                   <WorkTimelineItem
                     key={work.id}
                     work={work}
                     onClick={() => setSelectedWorkId(work.id)}
-                    isLast={index === displayWorks.length - 1}
+                    isLast={index === works.length - 1}
                   />
                 ))}
               </div>
             )}
 
-            {/* Paginación (Activa cuando no hay búsqueda local filtrando) */}
-            {!searchTerm && totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-border/80 pt-6 mt-4">
-                <span className="text-xs text-muted-foreground">
-                  Página <strong className="text-foreground">{currentPage}</strong> de{' '}
-                  <strong className="text-foreground">{totalPages}</strong> ({total} obras
-                  documentadas)
+            {/* Pie de catálogo: Contador de registros reubicado y Paginación shadcn/ui */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-white/[0.08] pt-6 mt-4">
+              {/* Nueva ubicación limpia del texto 'Mostrando N registros' */}
+              <div className="flex items-center gap-2 text-xs text-[#9aa0a6] select-none">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#4285F4]" />
+                <span>
+                  Mostrando{' '}
+                  <strong className="text-white font-medium tabular-nums">
+                    {total === 0 ? 0 : `${fromRecord}–${toRecord}`}
+                  </strong>{' '}
+                  de <strong className="text-white font-medium tabular-nums">{total}</strong>{' '}
+                  {total === 1 ? 'registro' : 'registros'}
                 </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={offset === 0}
-                    onClick={() => setOffset(Math.max(0, offset - limit))}
-                    className="h-9 rounded-xl border-border/80"
-                  >
-                    <ChevronLeft className="w-4 h-4 mr-1" />
-                    Anterior
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={offset + limit >= total}
-                    onClick={() => setOffset(offset + limit)}
-                    className="h-9 rounded-xl border-border/80"
-                  >
-                    Siguiente
-                    <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
-                </div>
               </div>
-            )}
+
+              {/* Paginación con componentes shadcn/ui */}
+              {totalPages > 1 && (
+                <Pagination className="mx-0 w-auto justify-center sm:justify-end">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        disabled={currentPage === 1}
+                        onClick={() => handlePageChange(currentPage - 1)}
+                      />
+                    </PaginationItem>
+
+                    {getPageNumbers().map((page, index) => {
+                      if (page === 'ellipsis') {
+                        return (
+                          <PaginationItem key={`ellipsis-${index}`}>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        );
+                      }
+                      return (
+                        <PaginationItem key={page}>
+                          <PaginationLink
+                            isActive={currentPage === page}
+                            onClick={() => handlePageChange(page)}
+                          >
+                            {page}
+                          </PaginationLink>
+                        </PaginationItem>
+                      );
+                    })}
+
+                    <PaginationItem>
+                      <PaginationNext
+                        disabled={currentPage === totalPages}
+                        onClick={() => handlePageChange(currentPage + 1)}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              )}
+            </div>
           </>
         )}
       </main>
 
-      {/* Pie de Página Institucional */}
-      <Footer />
+      {/* Modales del Sistema diferidos mediante code-splitting */}
+      <React.Suspense fallback={null}>
+        {isLoginOpen && <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />}
 
-      {/* Modales del Sistema */}
-      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
+        {(isCreateOpen || !!workToEdit) && (
+          <WorkFormModal
+            isOpen={isCreateOpen || !!workToEdit}
+            onClose={() => {
+              setIsCreateOpen(false);
+              setWorkToEdit(null);
+            }}
+            onSuccess={() => {
+              void refetch();
+              if (selectedWorkId) {
+                setDetailRefreshKey((prev) => prev + 1);
+              }
+            }}
+            workToEdit={workToEdit}
+          />
+        )}
 
-      <WorkFormModal
-        isOpen={isCreateOpen || !!workToEdit}
-        onClose={() => {
-          setIsCreateOpen(false);
-          setWorkToEdit(null);
-        }}
-        onSuccess={() => {
-          void refetch();
-          if (selectedWorkId) {
-            setDetailRefreshKey((prev) => prev + 1);
-          }
-        }}
-        workToEdit={workToEdit}
-      />
+        {!!selectedWorkId && (
+          <WorkDetailModal
+            workId={selectedWorkId}
+            refreshKey={detailRefreshKey}
+            isOpen={!!selectedWorkId}
+            onClose={() => setSelectedWorkId(null)}
+            onEdit={(work) => {
+              setWorkToEdit(work);
+            }}
+            onDelete={(workId) => {
+              setWorkIdToDelete(workId);
+            }}
+            onWorkUpdated={() => void refetch()}
+          />
+        )}
 
-      <WorkDetailModal
-        workId={selectedWorkId}
-        refreshKey={detailRefreshKey}
-        isOpen={!!selectedWorkId}
-        onClose={() => setSelectedWorkId(null)}
-        onEdit={(work) => {
-          setWorkToEdit(work);
-        }}
-        onDelete={(workId) => {
-          setWorkIdToDelete(workId);
-        }}
-        onWorkUpdated={() => void refetch()}
-      />
-
-      <ConfirmModal
-        isOpen={!!workIdToDelete}
-        onClose={() => setWorkIdToDelete(null)}
-        onConfirm={handleConfirmDeleteWork}
-        title="¿Eliminar este trabajo de MIBITURVEN?"
-        message="Esta acción es irreversible: se eliminará el registro de la bitácora junto con todos sus archivos multimedia físicos en almacenamiento (RN-04)."
-        confirmText="Eliminar Trabajo"
-        isDestructive
-        isLoading={isDeletingWork}
-      />
+        {!!workIdToDelete && (
+          <ConfirmModal
+            isOpen={!!workIdToDelete}
+            onClose={() => setWorkIdToDelete(null)}
+            onConfirm={handleConfirmDeleteWork}
+            title="¿Eliminar este trabajo de MIBITURVEN?"
+            message="Esta acción es irreversible: se eliminará el registro de la bitácora junto con todos sus archivos multimedia físicos en almacenamiento (RN-04)."
+            confirmText="Eliminar Trabajo"
+            isDestructive
+            isLoading={isDeletingWork}
+          />
+        )}
+      </React.Suspense>
     </div>
   );
 };

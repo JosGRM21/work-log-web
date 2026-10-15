@@ -11,6 +11,12 @@ const config: Config = {
         'text-primary': 'var(--color-text-primary)',
         'text-secondary': 'var(--color-text-secondary)',
         'text-muted': 'var(--color-text-muted)',
+        'google-blue': {
+          DEFAULT: '#1a73e8',
+          hover: '#1557b0',
+          electric: '#4285F4',
+          light: '#8ab4f8',
+        },
         state: {
           pending: '#F3F4F6',
           'pending-text': '#374151',
@@ -22,10 +28,17 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
+          '"Google Sans Text"',
+          '"Google Sans"',
+          'Roboto',
           '-apple-system',
           'BlinkMacSystemFont',
-          '"Inter"',
           '"Segoe UI"',
+          'sans-serif',
+        ],
+        display: [
+          '"Google Sans"',
+          '"Google Sans Text"',
           'Roboto',
           'sans-serif',
         ],
