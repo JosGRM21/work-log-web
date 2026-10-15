@@ -3,11 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -18,28 +14,12 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": [
-        "./src/client/*"
-      ],
-      "@shared/*": [
-        "./src/shared/*"
-      ],
-      "@server/*": [
-        "./src/server/*"
-      ],
-      "@client/*": [
-        "./src/client/*"
-      ]
+      "@/*": ["./src/client/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@server/*": ["./src/server/*"],
+      "@client/*": ["./src/client/*"]
     }
   },
-  "include": [
-    "src/**/*",
-    "vite.config.ts",
-    "tailwind.config.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "build"
-  ]
+  "include": ["src/**/*", "vite.config.ts", "tailwind.config.ts"],
+  "exclude": ["node_modules", "dist", "build"]
 }

@@ -7,12 +7,14 @@ Este documento detalla el procedimiento estándar para aprovisionar, configurar,
 ## 1. Aprovisionamiento de Infraestructura
 
 ### 1.1 Base de Datos PostgreSQL
+
 - **Proveedores Recomendados:** Neon Serverless PostgreSQL, Supabase, o AWS Aurora/RDS PostgreSQL 16+.
 - **Requisitos de Conexión:**
   - Habilitar cifrado obligatorio en tránsito mediante SSL (`sslmode=require`).
   - Obtener la URL de conexión transaccional con connection pooling (ej. PgBouncer o Neon pooler).
 
 ### 1.2 Almacenamiento de Objetos (Cloudflare R2 / AWS S3)
+
 - **Bucket:** Crear un bucket denominado `work-log-web-production-media`.
 - **CORS Configuration:**
   ```json
@@ -33,38 +35,44 @@ Este documento detalla el procedimiento estándar para aprovisionar, configurar,
 
 Configurar en el panel de hosting (Render / Railway / Vercel / Cloudflare Pages / AWS ECS):
 
-| Variable | Descripción | Ejemplo / Valor |
-| :--- | :--- | :--- |
-| `NODE_ENV` | Entorno de ejecución | `production` |
-| `PORT` | Puerto HTTP del servidor Express | `3000` |
-| `DATABASE_URL` | Cadena de conexión PostgreSQL con SSL | `postgresql://user:pass@host/dbname?sslmode=require` |
-| `SESSION_SECRET` | Clave HMAC de al menos 32 caracteres | Clave criptográfica aleatoria de 64 caracteres |
-| `CLIENT_URL` | Dominio del frontend para CORS y cookies | `https://tu-dominio.com` |
-| `STORAGE_DRIVER` | Controlador de almacenamiento | `s3` |
-| `STORAGE_BUCKET` | Nombre del bucket | `work-log-web-production-media` |
-| `STORAGE_ENDPOINT` | Endpoint S3 compatible (ej. Cloudflare R2) | `https://<account_id>.r2.cloudflarestorage.com` |
-| `STORAGE_ACCESS_KEY` | Token de acceso S3 | `...` |
-| `STORAGE_SECRET_KEY` | Clave secreta S3 | `...` |
-| `STORAGE_PUBLIC_BASE_URL` | URL base pública de entrega CDN | `https://media.tu-dominio.com` |
+| Variable                  | Descripción                                | Ejemplo / Valor                                      |
+| :------------------------ | :----------------------------------------- | :--------------------------------------------------- |
+| `NODE_ENV`                | Entorno de ejecución                       | `production`                                         |
+| `PORT`                    | Puerto HTTP del servidor Express           | `3000`                                               |
+| `DATABASE_URL`            | Cadena de conexión PostgreSQL con SSL      | `postgresql://user:pass@host/dbname?sslmode=require` |
+| `SESSION_SECRET`          | Clave HMAC de al menos 32 caracteres       | Clave criptográfica aleatoria de 64 caracteres       |
+| `CLIENT_URL`              | Dominio del frontend para CORS y cookies   | `https://tu-dominio.com`                             |
+| `STORAGE_DRIVER`          | Controlador de almacenamiento              | `s3`                                                 |
+| `STORAGE_BUCKET`          | Nombre del bucket                          | `work-log-web-production-media`                      |
+| `STORAGE_ENDPOINT`        | Endpoint S3 compatible (ej. Cloudflare R2) | `https://<account_id>.r2.cloudflarestorage.com`      |
+| `STORAGE_ACCESS_KEY`      | Token de acceso S3                         | `...`                                                |
+| `STORAGE_SECRET_KEY`      | Clave secreta S3                           | `...`                                                |
+| `STORAGE_PUBLIC_BASE_URL` | URL base pública de entrega CDN            | `https://media.tu-dominio.com`                       |
 
 ---
 
 ## 3. Despliegue y Migraciones
 
 ### 3.1 Ejecutar Migraciones de Base de Datos
+
 En el paso de build o Release Command del host:
+
 ```bash
 npm run prisma:deploy
 ```
+
 Este comando aplica todas las migraciones SQL acumuladas sin alterar datos existentes y garantiza la creación de restricciones `CHECK` en PostgreSQL.
 
 ### 3.2 Semilla del Administrador Inicial
+
 Para crear el usuario administrador inicial seguro en la BD de producción:
+
 ```bash
 ADMIN_EMAIL="admin@tu-empresa.com" ADMIN_PASSWORD="TuPasswordUltraSegura2026!" npm run db:seed
 ```
 
 ### 3.3 Construcción del Frontend y Servidor
+
 ```bash
 npm run build:client
 npm run build # o levantar node/tsx src/server/index.ts

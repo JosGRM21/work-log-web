@@ -105,9 +105,7 @@ export function getSessionCookieOptions(): CookieOptions {
   const isProduction = process.env.NODE_ENV === 'production';
   const configuredSameSite = process.env.SESSION_COOKIE_SAME_SITE?.toLowerCase();
   const sameSite: 'lax' | 'strict' | 'none' =
-    configuredSameSite === 'lax' ||
-      configuredSameSite === 'strict' ||
-      configuredSameSite === 'none'
+    configuredSameSite === 'lax' || configuredSameSite === 'strict' || configuredSameSite === 'none'
       ? configuredSameSite
       : isProduction
         ? 'none'

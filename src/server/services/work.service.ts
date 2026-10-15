@@ -16,7 +16,7 @@ export class WorkService {
   constructor(
     private readonly db: PrismaClient = defaultPrisma,
     private readonly storageDriver: StorageDriver = defaultStorage,
-  ) { }
+  ) {}
 
   async listWorks(query: ListWorksQuery) {
     const whereClause: { status?: string } = {};
@@ -53,10 +53,10 @@ export class WorkService {
     const countsByWork =
       workIds.length > 0
         ? await this.db.mediaAsset.groupBy({
-          by: ['workItemId', 'mediaType'],
-          where: { workItemId: { in: workIds } },
-          _count: { id: true },
-        })
+            by: ['workItemId', 'mediaType'],
+            where: { workItemId: { in: workIds } },
+            _count: { id: true },
+          })
         : [];
 
     const mediaCountsMap = new Map<string, { images: number; videos: number }>();
@@ -74,9 +74,9 @@ export class WorkService {
       const firstMedia = item.mediaAssets[0];
       const mediaPreview = firstMedia
         ? {
-          url: this.storageDriver.getUrl(firstMedia.filePath),
-          type: firstMedia.mediaType as AllowedMediaType,
-        }
+            url: this.storageDriver.getUrl(firstMedia.filePath),
+            type: firstMedia.mediaType as AllowedMediaType,
+          }
         : null;
 
       const mediaCount = mediaCountsMap.get(item.id) ?? { images: 0, videos: 0 };

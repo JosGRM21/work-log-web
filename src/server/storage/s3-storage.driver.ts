@@ -78,7 +78,7 @@ export class S3StorageDriver implements StorageDriver {
 
     if (options.signal) {
       options.signal.addEventListener('abort', () => {
-        upload.abort().catch(() => { });
+        upload.abort().catch(() => {});
       });
     }
 

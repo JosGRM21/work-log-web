@@ -18,7 +18,7 @@ export class MediaService {
   constructor(
     private readonly db: PrismaClient = defaultPrisma,
     private readonly storageDriver: StorageDriver = defaultStorage,
-  ) { }
+  ) {}
 
   async uploadMedia(workId: string, reqStream: MultipartRequestStream) {
     if (!isValidUuid(workId)) {
@@ -40,10 +40,8 @@ export class MediaService {
       _count: { id: true },
     });
 
-    const initialImageCount =
-      initialCounts.find((c) => c.mediaType === 'image')?._count.id ?? 0;
-    const initialVideoCount =
-      initialCounts.find((c) => c.mediaType === 'video')?._count.id ?? 0;
+    const initialImageCount = initialCounts.find((c) => c.mediaType === 'image')?._count.id ?? 0;
+    const initialVideoCount = initialCounts.find((c) => c.mediaType === 'video')?._count.id ?? 0;
 
     const uploadedFiles: UploadedFileStreamResult[] = await parseAndUploadMultipartFiles(
       reqStream,
@@ -82,10 +80,8 @@ export class MediaService {
           _max: { sortOrder: true },
         });
 
-        const currentImages =
-          currentStats.find((c) => c.mediaType === 'image')?._count.id ?? 0;
-        const currentVideos =
-          currentStats.find((c) => c.mediaType === 'video')?._count.id ?? 0;
+        const currentImages = currentStats.find((c) => c.mediaType === 'image')?._count.id ?? 0;
+        const currentVideos = currentStats.find((c) => c.mediaType === 'video')?._count.id ?? 0;
 
         validateMediaQuota(currentImages, currentVideos, incomingImages, incomingVideos);
 

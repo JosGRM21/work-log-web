@@ -5,7 +5,7 @@ import {
 } from '../services/media.service.js';
 
 export class MediaController {
-  constructor(private readonly service: MediaService = defaultMediaService) { }
+  constructor(private readonly service: MediaService = defaultMediaService) {}
 
   async upload(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

@@ -34,11 +34,11 @@ const pool = new Pool({
   connectionString,
   ...(isSsl
     ? {
-      ssl: {
-        rejectUnauthorized: requiresStrictVerify,
-        ...(sslCa ? { ca: sslCa } : {}),
-      },
-    }
+        ssl: {
+          rejectUnauthorized: requiresStrictVerify,
+          ...(sslCa ? { ca: sslCa } : {}),
+        },
+      }
     : {}),
 });
 

@@ -71,9 +71,7 @@ describe('Works CRUD API (Integration)', () => {
   });
 
   it('GET /works/:id con UUID inexistente debe devolver 404', async () => {
-    const res = await fetch(
-      `${baseUrl}/works/00000000-0000-0000-0000-000000000000`,
-    );
+    const res = await fetch(`${baseUrl}/works/00000000-0000-0000-0000-000000000000`);
     expect(res.status).toBe(404);
   });
 

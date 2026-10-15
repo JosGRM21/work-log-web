@@ -55,7 +55,7 @@ export class LocalDiskStorageDriver implements StorageDriver {
         ...(options.signal ? { signal: options.signal } : {}),
       });
     } catch (error) {
-      await unlink(destinationPath).catch(() => { });
+      await unlink(destinationPath).catch(() => {});
       throw error;
     }
 

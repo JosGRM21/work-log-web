@@ -8,7 +8,7 @@ import {
 } from '../validators/work.validator.js';
 
 export class WorkController {
-  constructor(private readonly service: WorkService = defaultWorkService) { }
+  constructor(private readonly service: WorkService = defaultWorkService) {}
 
   async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

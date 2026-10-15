@@ -46,11 +46,7 @@ export async function authenticate(
   next();
 }
 
-export async function requireAuth(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-): Promise<void> {
+export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     await resolveSessionUser(req);
     if (!req.user) {

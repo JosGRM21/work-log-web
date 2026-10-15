@@ -3,7 +3,7 @@ import { authService as defaultAuthService, type AuthService } from '../services
 import { getSessionCookieOptions, SESSION_COOKIE_NAME } from '../utils/session.js';
 
 export class AuthController {
-  constructor(private readonly service: AuthService = defaultAuthService) { }
+  constructor(private readonly service: AuthService = defaultAuthService) {}
 
   async login(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
