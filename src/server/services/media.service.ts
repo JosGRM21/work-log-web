@@ -393,6 +393,39 @@ export class MediaService {
       console.warn(`Advertencia al purgar archivo físico en storage: ${asset.filePath}`, error);
     }
   }
+
+  async uploadThumbnail(
+    id: string,
+    buffer: Buffer,
+    mimeType = 'image/webp',
+  ): Promise<{ thumbnail_url: string }> {
+    if (!isValidUuid(id)) {
+      throw AppError.notFound('El recurso multimedia solicitado no existe.');
+    }
+
+    const asset = await this.db.mediaAsset.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        filePath: true,
+      },
+    });
+
+    if (!asset) {
+      throw AppError.notFound('El recurso multimedia solicitado no existe.');
+    }
+
+    const thumbKey = asset.filePath.replace(/\.[^.]+$/, '-thumb.webp');
+    await this.storageDriver.putObject({
+      key: thumbKey,
+      body: buffer,
+      mimeType,
+    });
+
+    return {
+      thumbnail_url: this.storageDriver.getUrl(thumbKey),
+    };
+  }
 }
 
 export const mediaService = new MediaService();

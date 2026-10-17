@@ -23,7 +23,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const headers = new Headers(options.headers || {});
 
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json');
+    if (options.body instanceof Blob && options.body.type) {
+      headers.set('Content-Type', options.body.type);
+    } else {
+      headers.set('Content-Type', 'application/json');
+    }
   }
 
   const response = await fetch(url, {
@@ -69,6 +73,20 @@ export const apiClient = {
       method: 'POST',
       body: body ? JSON.stringify(body) : undefined,
     }),
+
+  put: <T>(endpoint: string, body?: unknown, options?: RequestInit) => {
+    const isBinaryOrForm =
+      body instanceof FormData ||
+      body instanceof Blob ||
+      body instanceof ArrayBuffer ||
+      (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(body));
+
+    return request<T>(endpoint, {
+      ...options,
+      method: 'PUT',
+      body: isBinaryOrForm ? (body as BodyInit) : body ? JSON.stringify(body) : undefined,
+    });
+  },
 
   patch: <T>(endpoint: string, body: unknown, options?: RequestInit) =>
     request<T>(endpoint, {

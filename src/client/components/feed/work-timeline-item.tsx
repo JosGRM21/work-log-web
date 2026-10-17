@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import type { WorkItemSummary, WorkItemDetail } from '../../../shared/types.js';
 import { formatWorkDate } from '@/lib/utils';
 import { apiClient } from '../../api/client.js';
@@ -30,6 +30,7 @@ const WorkTimelineItemComponent: React.FC<WorkTimelineItemProps> = ({
   const hasMedia = !!work.media_preview;
   const isVideo = work.media_preview?.type === 'video';
   const hoverTimerRef = useRef<number | null>(null);
+  const [posterFailed, setPosterFailed] = useState(false);
 
   const handleClick = useCallback(() => {
     onSelect(work.id);
@@ -84,21 +85,23 @@ const WorkTimelineItemComponent: React.FC<WorkTimelineItemProps> = ({
             {hasMedia ? (
               isVideo ? (
                 <div className="relative w-full h-full flex items-center justify-center bg-black">
-                  {work.media_preview?.thumbnail_url ? (
+                  {!posterFailed && work.media_preview?.thumbnail_url ? (
                     <img
                       src={work.media_preview.thumbnail_url}
                       alt={work.title}
                       loading={priority ? 'eager' : 'lazy'}
                       fetchPriority={priority ? 'high' : 'auto'}
                       decoding="async"
+                      onError={() => setPosterFailed(true)}
                       className="w-full h-full object-cover opacity-80"
                     />
                   ) : (
                     <video
                       src={work.media_preview!.url}
-                      poster={work.media_preview?.thumbnail_url}
                       className="w-full h-full object-cover opacity-80"
-                      preload="none"
+                      preload="metadata"
+                      muted
+                      playsInline
                     />
                   )}
                   <div className="absolute inset-0 flex items-center justify-center bg-black/40">

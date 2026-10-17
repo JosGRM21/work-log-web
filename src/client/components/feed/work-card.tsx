@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import type { WorkItemSummary, WorkItemDetail } from '../../../shared/types.js';
 import { formatWorkDate } from '@/lib/utils';
 import { apiClient } from '../../api/client.js';
@@ -25,6 +25,7 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onSelect, priority =
   const status = STATUS_CONFIG[work.status] || STATUS_CONFIG.pending;
   const totalMedia = (work.media_count?.images || 0) + (work.media_count?.videos || 0);
   const hoverTimerRef = useRef<number | null>(null);
+  const [posterFailed, setPosterFailed] = useState(false);
 
   const handleClick = useCallback(() => {
     onSelect(work.id);
@@ -67,21 +68,23 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onSelect, priority =
         {hasMedia ? (
           isVideo ? (
             <div className="relative w-full h-full flex items-center justify-center bg-black">
-              {work.media_preview?.thumbnail_url ? (
+              {!posterFailed && work.media_preview?.thumbnail_url ? (
                 <img
                   src={work.media_preview.thumbnail_url}
                   alt={work.title}
                   loading={priority ? 'eager' : 'lazy'}
                   fetchPriority={priority ? 'high' : 'auto'}
                   decoding="async"
+                  onError={() => setPosterFailed(true)}
                   className="w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition-[transform,opacity] duration-700 ease-out"
                 />
               ) : (
                 <video
                   src={work.media_preview!.url}
-                  poster={work.media_preview?.thumbnail_url}
                   className="w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition-[transform,opacity] duration-700 ease-out"
-                  preload="none"
+                  preload="metadata"
+                  muted
+                  playsInline
                 />
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-[#060a12]/90 via-black/20 to-black/30" />

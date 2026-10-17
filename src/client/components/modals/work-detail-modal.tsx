@@ -665,6 +665,9 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                       alt=""
                                       loading="lazy"
                                       decoding="async"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
                                       className="absolute inset-0 w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300 opacity-80"
                                     />
                                   )}

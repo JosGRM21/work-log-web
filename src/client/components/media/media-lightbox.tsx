@@ -233,6 +233,11 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
                       alt=""
                       loading="lazy"
                       decoding="async"
+                      onError={(e) => {
+                        if (item.thumbnail_url && e.currentTarget.src !== item.url) {
+                          e.currentTarget.src = item.url;
+                        }
+                      }}
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -243,6 +248,9 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
                           alt=""
                           loading="lazy"
                           decoding="async"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
                           className="absolute inset-0 w-full h-full object-cover opacity-80"
                         />
                       )}

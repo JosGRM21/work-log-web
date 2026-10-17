@@ -116,14 +116,115 @@ async function compressImageIfNeeded(file: File): Promise<File> {
   return file;
 }
 
+async function compressVideoIfNeeded(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<File> {
+  if (!file.type.toLowerCase().startsWith('video/')) {
+    return file;
+  }
+
+  // Si el video ya es ligero (<= 5 MB), se conserva tal cual
+  if (file.size <= 5 * 1024 * 1024) {
+    return file;
+  }
+
+  // Verificar disponibilidad de WebCodecs en el navegador
+  if (
+    typeof window === 'undefined' ||
+    typeof (window as unknown as { VideoEncoder?: unknown }).VideoEncoder === 'undefined'
+  ) {
+    console.warn('WebCodecs no está disponible en este navegador. Se sube el video original.');
+    return file;
+  }
+
+  try {
+    const {
+      Input,
+      Output,
+      Conversion,
+      ALL_FORMATS,
+      BlobSource,
+      BufferTarget,
+      Mp4OutputFormat,
+      Quality,
+    } = await import('mediabunny');
+
+    const input = new Input({
+      source: new BlobSource(file),
+      formats: ALL_FORMATS,
+    });
+
+    const videoTrack = await input.getPrimaryVideoTrack();
+    if (!videoTrack) {
+      return file;
+    }
+
+    const width = await videoTrack.getDisplayWidth();
+    const height = await videoTrack.getDisplayHeight();
+
+    // Redimensionar al lado mayor máximo 1280 (720p HD)
+    const maxDimension = 1280;
+    let targetWidth: number | undefined = undefined;
+    let targetHeight: number | undefined = undefined;
+
+    if (width > maxDimension || height > maxDimension) {
+      if (width > height) {
+        targetWidth = maxDimension;
+        targetHeight = Math.round((height * maxDimension) / width);
+      } else {
+        targetHeight = maxDimension;
+        targetWidth = Math.round((width * maxDimension) / height);
+      }
+      // H.264 requiere dimensiones pares
+      targetWidth = targetWidth - (targetWidth % 2);
+      targetHeight = targetHeight - (targetHeight % 2);
+    }
+
+    const output = new Output({
+      format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
+      target: new BufferTarget(),
+    });
+
+    const conversion = await Conversion.init({
+      input,
+      output,
+      video: {
+        width: targetWidth,
+        height: targetHeight,
+        quality: new Quality('medium'), // Bitrate óptimo ~2-2.5 Mbps para bitácoras técnicas
+      },
+      showWarnings: false,
+    });
+
+    if (!conversion.isValid) {
+      console.warn('Conversión no válida para este video:', conversion.discardedTracks);
+      return file;
+    }
+
+    if (onProgress) {
+      conversion.onProgress = (prog) => onProgress(Math.round(prog * 100));
+    }
+
+    await conversion.execute();
+
+    const buffer = output.target.buffer;
+    if (buffer && buffer.byteLength > 0 && buffer.byteLength < file.size) {
+      const newName = file.name.replace(/\.[^.]+$/, '') + '.mp4';
+      return new File([buffer], newName, { type: 'video/mp4' });
+    }
+  } catch (err) {
+    console.warn('Compresión de video omitida por fallo o códec no soportado:', err);
+  }
+
+  return file;
+}
+
 async function extractVideoPosterBlob(file: File): Promise<Blob | null> {
   return new Promise((resolve) => {
     const video = document.createElement('video');
     const objectUrl = URL.createObjectURL(file);
-    video.src = objectUrl;
-    video.muted = true;
-    video.playsInline = true;
-    video.preload = 'metadata';
+    let resolved = false;
 
     const cleanup = () => {
       URL.revokeObjectURL(objectUrl);
@@ -131,9 +232,30 @@ async function extractVideoPosterBlob(file: File): Promise<Blob | null> {
       video.load();
     };
 
+    const finish = (result: Blob | null) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(safetyTimeout);
+      cleanup();
+      resolve(result);
+    };
+
+    // Timeout de seguridad de 5 segundos para que la promesa nunca quede colgada
+    const safetyTimeout = setTimeout(() => {
+      finish(null);
+    }, 5000);
+
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+    video.src = objectUrl;
+
     video.onloadedmetadata = () => {
-      // Buscar el segundo 1.0 (o el 25% si el video dura menos de 2s) para evitar frames negros iniciales
-      video.currentTime = video.duration > 2 ? 1.0 : Math.min(0.5, video.duration / 4);
+      let seekTime = 0.5;
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        seekTime = video.duration > 2 ? 1.0 : Math.min(0.5, video.duration / 4);
+      }
+      video.currentTime = seekTime;
     };
 
     video.onseeked = async () => {
@@ -145,36 +267,41 @@ async function extractVideoPosterBlob(file: File): Promise<Blob | null> {
         canvas.height = targetHeight;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          cleanup();
-          return resolve(null);
+          return finish(null);
         }
 
+        const vWidth = video.videoWidth || targetWidth;
+        const vHeight = video.videoHeight || targetHeight;
+
         // Center-crop (fit: cover) para no deformar videos verticales
-        const scale = Math.max(targetWidth / video.videoWidth, targetHeight / video.videoHeight);
-        const scaledWidth = video.videoWidth * scale;
-        const scaledHeight = video.videoHeight * scale;
+        const scale = Math.max(targetWidth / vWidth, targetHeight / vHeight);
+        const scaledWidth = vWidth * scale;
+        const scaledHeight = vHeight * scale;
         const offsetX = (targetWidth - scaledWidth) / 2;
         const offsetY = (targetHeight - scaledHeight) / 2;
 
         ctx.drawImage(video, offsetX, offsetY, scaledWidth, scaledHeight);
         canvas.toBlob(
           (blob) => {
-            cleanup();
-            resolve(blob);
+            finish(blob);
           },
           'image/webp',
           0.8,
         );
       } catch {
-        cleanup();
-        resolve(null);
+        finish(null);
       }
     };
 
     video.onerror = () => {
-      cleanup();
-      resolve(null);
+      finish(null);
     };
+
+    try {
+      video.load();
+    } catch {
+      // Ignorar
+    }
   });
 }
 
@@ -277,6 +404,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -354,6 +482,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
     }
 
     setIsProcessingFiles(true);
+    setProcessingStatus('Preparando archivos...');
     try {
       const processed: StagedFile[] = [];
       for (const file of newFiles) {
@@ -361,12 +490,14 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
         const isVid = file.type.toLowerCase().startsWith('video/');
 
         if (isImg) {
+          setProcessingStatus(`Optimizando imagen "${file.name}"...`);
           const compressed = await compressImageIfNeeded(file);
           if (compressed.size > MAX_IMAGE_BYTES) {
             setErrorMessage(
               `"${compressed.name}" supera el límite máximo de 10 MB para imágenes (RNF-STOR-01).`,
             );
             setIsProcessingFiles(false);
+            setProcessingStatus(null);
             return;
           }
           const thumbBlob = await generateThumbnailBlob(compressed);
@@ -378,13 +509,18 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
             id: `${compressed.name}-${compressed.size}-${Date.now()}-${Math.random()}`,
           });
         } else if (isVid) {
-          const posterBlob = await extractVideoPosterBlob(file);
+          setProcessingStatus(`Comprimiendo video "${file.name}" con WebCodecs...`);
+          const compressed = await compressVideoIfNeeded(file, (pct) => {
+            setProcessingStatus(`Comprimiendo video "${file.name}" (${pct}%)...`);
+          });
+          setProcessingStatus(`Extrayendo miniatura de "${file.name}"...`);
+          const posterBlob = await extractVideoPosterBlob(compressed);
           const previewUrl = posterBlob ? URL.createObjectURL(posterBlob) : null;
           processed.push({
-            file,
+            file: compressed,
             thumbBlob: posterBlob,
             previewUrl,
-            id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
+            id: `${compressed.name}-${compressed.size}-${Date.now()}-${Math.random()}`,
           });
         }
       }
@@ -394,6 +530,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
       setErrorMessage('Error al procesar los archivos seleccionados: ' + (err as Error).message);
     } finally {
       setIsProcessingFiles(false);
+      setProcessingStatus(null);
     }
   };
 
@@ -522,7 +659,35 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
         stagedFiles.forEach((s) => {
           formData.append('files', s.file);
         });
-        await apiClient.upload(`/works/${workId}/media`, formData);
+        const uploadRes = await apiClient.upload<{
+          uploaded: Array<{
+            id: string;
+            work_id: string;
+            url: string;
+            thumbnail_url: string;
+            type: string;
+            size_bytes: number;
+            sort_order: number;
+          }>;
+        }>(`/works/${workId}/media`, formData);
+
+        // Subir miniaturas físicas (posters) para videos u otros medios que tengan thumbBlob local
+        if (uploadRes?.uploaded && Array.isArray(uploadRes.uploaded)) {
+          await Promise.allSettled(
+            uploadRes.uploaded.map(async (asset, idx) => {
+              const staged = stagedFiles[idx];
+              if (staged?.thumbBlob) {
+                try {
+                  await apiClient.put(`/media/${asset.id}/thumbnail`, staged.thumbBlob, {
+                    headers: { 'Content-Type': 'image/webp' },
+                  });
+                } catch (thumbErr) {
+                  console.warn(`No se pudo subir miniatura para ${asset.id}:`, thumbErr);
+                }
+              }
+            }),
+          );
+        }
       }
 
       handleClearAll();
@@ -627,7 +792,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
       {isProcessingFiles && (
         <div className="p-3 rounded-xl bg-[#1a73e8]/10 border border-[#1a73e8]/30 text-[#8ab4f8] text-xs font-medium flex items-center gap-2 animate-in fade-in-0">
           <Loader2 className="w-4 h-4 animate-spin shrink-0 text-[#4285F4]" />
-          <span>Optimizando imágenes y extrayendo miniaturas de video...</span>
+          <span>{processingStatus || 'Optimizando imágenes y extrayendo miniaturas de video...'}</span>
         </div>
       )}
 

@@ -165,7 +165,6 @@ export class S3StorageDriver implements StorageDriver {
       Bucket: this.bucket,
       Key: canonicalKey,
       ContentType: options.mimeType,
-      ContentLength: options.maxSizeBytes,
       CacheControl: 'public, max-age=31536000, immutable',
     });
 
