@@ -53,15 +53,18 @@ Configurar en el panel de hosting (Render / Railway / Vercel / Cloudflare Pages 
 
 ## 3. Despliegue y Migraciones
 
-### 3.1 Ejecutar Migraciones de Base de Datos
+### 3.1 Configuración de Comandos en Render (Web Service)
 
-En el paso de build o Release Command del host:
+En la configuración del servicio web en el panel de **Render**:
 
-```bash
-npm run prisma:deploy
-```
+| Campo | Comando Recomendado | Explicación |
+| :--- | :--- | :--- |
+| **Build Command** | `npm install --include=dev && npm run prisma:generate && npm run build` | Instala dependencias (incluyendo devDependencies para compilar Vite/TypeScript), genera el cliente Prisma y compila el backend y frontend. |
+| **Pre-Deploy Command** | `npm run prisma:deploy` | Ejecuta las migraciones de Prisma antes de poner la nueva versión en producción, asegurando acceso a la red de la BD. |
+| **Start Command** | `npm run start` | Levanta el servidor Express compilado (`node dist/server/server/index.js`). |
 
-Este comando aplica todas las migraciones SQL acumuladas sin alterar datos existentes y garantiza la creación de restricciones `CHECK` en PostgreSQL.
+> [!NOTE]
+> En Render, `NODE_ENV=production` viene activado por defecto, lo que provoca que `npm install` omita las dependencias de desarrollo (`devDependencies`). Usar `--include=dev` garantiza que herramientas como Vite y el compilador de TypeScript (`tsc`) se instalen durante la fase de construcción.
 
 ### 3.2 Semilla del Administrador Inicial
 
@@ -69,13 +72,6 @@ Para crear el usuario administrador inicial seguro en la BD de producción:
 
 ```bash
 ADMIN_EMAIL="admin@tu-empresa.com" ADMIN_PASSWORD="TuPasswordUltraSegura2026!" npm run db:seed
-```
-
-### 3.3 Construcción del Frontend y Servidor
-
-```bash
-npm run build:client
-npm run build # o levantar node/tsx src/server/index.ts
 ```
 
 ---
