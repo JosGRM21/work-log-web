@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Buffer } from 'node:buffer';
-import { storage } from '../../src/server/storage/index.js';
+import { storage } from '../../src/server/infra/storage/index.js';
 
 describe('StorageDriver Lifecycle (Integration)', () => {
   it('debe completar el ciclo de subida y eliminación física de un objeto', async () => {

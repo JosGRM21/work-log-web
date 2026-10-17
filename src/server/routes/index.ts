@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { authRouter } from './auth.routes.js';
-import { workRouter } from './work.routes.js';
-import { mediaRouter } from './media.routes.js';
-import { requireAuth } from '../middlewares/auth.middleware.js';
-import { prisma } from '../db/client.js';
+import { authRouter } from '../modules/auth/auth.routes.js';
+import { workRouter } from '../modules/works/works.routes.js';
+import { mediaRouter } from '../modules/media/media.routes.js';
+import { requireAuth } from '../core/middlewares/auth.middleware.js';
+import { prisma } from '../infra/db/client.js';
 
 export const apiRouter = Router();
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuth } from '../../context/auth-context.js';
+import { useAuth } from '@/features/auth/context/auth-context.js';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Plus, LogIn, LogOut, ShieldCheck } from 'lucide-react';

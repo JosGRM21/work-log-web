@@ -5,7 +5,7 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
 import { app } from '../../src/server/app.js';
-import { prisma } from '../../src/server/db/client.js';
+import { prisma } from '../../src/server/infra/db/client.js';
 
 describe('Media Pipeline & Physical Purge API (Integration)', () => {
   let server: Server;

@@ -1,5 +1,5 @@
-import { prisma } from '../db/client.js';
-import { storage } from '../storage/index.js';
+import { prisma } from '../infra/db/client.js';
+import { storage } from '../infra/storage/index.js';
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 

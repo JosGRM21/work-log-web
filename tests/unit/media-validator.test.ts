@@ -5,8 +5,8 @@ import {
   validateMediaQuota,
   validateFileSizeBytes,
   isValidUuid,
-} from '../../src/server/validators/media.validator.js';
-import { AppError } from '../../src/server/errors/app-error.js';
+} from '../../src/server/modules/media/media.validator.js';
+import { AppError } from '../../src/server/core/errors/app-error.js';
 
 describe('Media Validator (Unit)', () => {
   describe('isValidUuid', () => {

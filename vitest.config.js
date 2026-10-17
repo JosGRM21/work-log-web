@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
     testTimeout: 10000,
     hookTimeout: 10000,
     env: {
@@ -17,6 +17,7 @@ export default defineConfig({
       '@server': path.resolve(import.meta.dirname, './src/server'),
       '@shared': path.resolve(import.meta.dirname, './src/shared'),
       '@client': path.resolve(import.meta.dirname, './src/client'),
+      '@': path.resolve(import.meta.dirname, './src/client'),
     },
   },
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createSessionToken, verifySessionToken } from '../../src/server/utils/session.js';
+import { createSessionToken, verifySessionToken } from '../../src/server/modules/auth/session.js';
 
 describe('Session Utility (Unit)', () => {
   beforeAll(() => {

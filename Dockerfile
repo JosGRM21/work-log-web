@@ -24,4 +24,4 @@ COPY --from=builder /app/prisma ./prisma
 RUN mkdir -p /app/uploads && chown -R node:node /app
 USER node
 EXPOSE 3000
-CMD ["node", "dist/server/server/index.js"]
+CMD ["node", "dist/server/index.js"]

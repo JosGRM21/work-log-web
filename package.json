@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server/index.ts",
-    "start": "node dist/server/server/index.js",
+    "start": "node dist/server/index.js",
     "dev:client": "vite",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
@@ -18,7 +18,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "db:seed": "tsx src/server/db/seed.ts",
+    "db:seed": "tsx src/server/infra/db/seed.ts",
     "media:gc": "tsx src/server/jobs/purge-orphans.ts",
     "test": "vitest run",
     "test:watch": "vitest",

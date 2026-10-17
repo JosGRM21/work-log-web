@@ -6,8 +6,8 @@ import {
   validateCreateWorkInput,
   validateUpdateWorkInput,
   parseListWorksQuery,
-} from '../../src/server/validators/work.validator.js';
-import { AppError } from '../../src/server/errors/app-error.js';
+} from '../../src/server/modules/works/works.validator.js';
+import { AppError } from '../../src/server/core/errors/app-error.js';
 
 describe('Work Validator (Unit)', () => {
   describe('isValidUuid', () => {

@@ -5,7 +5,7 @@ import { stat, writeFile, mkdir, utimes } from 'node:fs/promises';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
 import { app } from '../../src/server/app.js';
-import { prisma } from '../../src/server/db/client.js';
+import { prisma } from '../../src/server/infra/db/client.js';
 import { purgeOrphanFiles } from '../../src/server/jobs/purge-orphans.js';
 
 describe('Performance, Media Pipeline & Caching Optimizations (Integration)', () => {

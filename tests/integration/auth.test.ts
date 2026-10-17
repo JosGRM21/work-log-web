@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { app } from '../../src/server/app.js';
-import { prisma } from '../../src/server/db/client.js';
+import { prisma } from '../../src/server/infra/db/client.js';
 
 describe('Auth & Session API (Integration)', () => {
   let server: Server;

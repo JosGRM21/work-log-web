@@ -1,32 +1,31 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { useWorks, invalidateWorkDetailCache } from './hooks/use-works.js';
-import { apiClient } from './api/client.js';
-import type { WorkItemDetail, WorkStatus } from '../shared/types.js';
+import { useWorks, invalidateWorkDetailCache } from './features/works/hooks/use-works.js';
+import { useWorkModals } from './features/works/hooks/use-work-modals.js';
+import type { WorkStatus } from '@shared/types.js';
 
 import { Navbar } from './components/layout/navbar.js';
-import { HeroSection } from './components/feed/hero-section.js';
-import { FeedFilters, type ViewMode } from './components/feed/feed-filters.js';
-import { WorkCard } from './components/feed/work-card.js';
-import { WorkTimelineItem } from './components/feed/work-timeline-item.js';
+import { HeroSection } from './features/works/components/hero-section.js';
+import { FeedFilters, type ViewMode } from './features/works/components/feed-filters.js';
+import { WorkCard } from './features/works/components/work-card.js';
+import { WorkTimelineItem } from './features/works/components/work-timeline-item.js';
+import { WorkFeedSkeletons } from './features/works/components/work-feed-skeletons.js';
 
 // Modales cargados dinámicamente mediante code-splitting
 const WorkDetailModal = React.lazy(() =>
-  import('./components/modals/work-detail-modal.js').then((m) => ({ default: m.WorkDetailModal })),
+  import('./features/works/modals/work-detail-modal.js').then((m) => ({ default: m.WorkDetailModal })),
 );
 const WorkFormModal = React.lazy(() =>
-  import('./components/modals/work-form-modal.js').then((m) => ({ default: m.WorkFormModal })),
+  import('./features/works/modals/work-form-modal.js').then((m) => ({ default: m.WorkFormModal })),
 );
 const ConfirmModal = React.lazy(() =>
-  import('./components/modals/confirm-modal.js').then((m) => ({ default: m.ConfirmModal })),
+  import('./components/common/confirm-modal.js').then((m) => ({ default: m.ConfirmModal })),
 );
 const LoginModal = React.lazy(() =>
-  import('./components/modals/login-modal.js').then((m) => ({ default: m.LoginModal })),
+  import('./features/auth/components/login-modal.js').then((m) => ({ default: m.LoginModal })),
 );
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from '@/components/ui/toast';
 import { AlertCircle, FolderX } from 'lucide-react';
 import {
   Pagination,
@@ -39,7 +38,6 @@ import {
 } from '@/components/ui/pagination';
 
 const ITEMS_PER_PAGE = 9;
-const SKELETON_SLOTS = Array.from({ length: ITEMS_PER_PAGE }, (_, i) => i + 1);
 
 export const App: React.FC = () => {
   const {
@@ -59,27 +57,30 @@ export const App: React.FC = () => {
   } = useWorks({ limit: ITEMS_PER_PAGE });
 
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
-  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
-  const [workToEdit, setWorkToEdit] = useState<WorkItemDetail | null>(null);
-  const [workIdToDelete, setWorkIdToDelete] = useState<string | null>(null);
-  const [isDeletingWork, setIsDeletingWork] = useState(false);
 
-  // Callbacks de navegación y modales estabilizados
-  const handleOpenLogin = useCallback(() => setIsLoginOpen(true), []);
-  const handleCloseLogin = useCallback(() => setIsLoginOpen(false), []);
-  const handleOpenCreate = useCallback(() => setIsCreateOpen(true), []);
-  const handleCloseCreate = useCallback(() => {
-    setIsCreateOpen(false);
-    setWorkToEdit(null);
-  }, []);
-  const handleSelectWork = useCallback((id: string) => setSelectedWorkId(id), []);
-  const handleCloseDetail = useCallback(() => setSelectedWorkId(null), []);
-  const handleEditWork = useCallback((work: WorkItemDetail) => setWorkToEdit(work), []);
-  const handleRequestDelete = useCallback((workId: string) => setWorkIdToDelete(workId), []);
-  const handleCancelDelete = useCallback(() => setWorkIdToDelete(null), []);
+  const {
+    isLoginOpen,
+    openLogin,
+    closeLogin,
+    isCreateOpen,
+    openCreate,
+    closeCreate,
+    selectedWorkId,
+    selectWork,
+    closeDetail,
+    workToEdit,
+    editWork,
+    workIdToDelete,
+    requestDelete,
+    cancelDelete,
+    isDeletingWork,
+    confirmDeleteWork,
+    detailRefreshKey,
+    refreshDetail,
+  } = useWorkModals({
+    onWorkDeleted: () => void refetch(true),
+  });
+
   const handleOrderToggle = useCallback(
     () => setOrder(order === 'desc' ? 'asc' : 'desc'),
     [order, setOrder],
@@ -179,34 +180,9 @@ export const App: React.FC = () => {
     return pages;
   }, [totalPages, currentPage]);
 
-  const handleConfirmDeleteWork = async () => {
-    if (!workIdToDelete) return;
-    setIsDeletingWork(true);
-    try {
-      await apiClient.delete(`/works/${workIdToDelete}`);
-      invalidateWorkDetailCache(workIdToDelete);
-      setSelectedWorkId(null);
-      setWorkIdToDelete(null);
-      await refetch(true);
-      toast.add({
-        title: 'Trabajo eliminado',
-        description: 'El proyecto y sus archivos multimedia fueron purgados físicamente.',
-        type: 'success',
-      });
-    } catch (err) {
-      toast.add({
-        title: 'No se pudo eliminar el trabajo',
-        description: (err as Error).message,
-        type: 'error',
-      });
-    } finally {
-      setIsDeletingWork(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-black text-white relative overflow-x-hidden flex flex-col antialiased selection:bg-[#1a73e8]/30 selection:text-blue-100">
-      <Navbar onOpenLogin={handleOpenLogin} onOpenCreate={handleOpenCreate} />
+      <Navbar onOpenLogin={openLogin} onOpenCreate={openCreate} />
 
       <section className="google-one-hero w-full pt-20 sm:pt-28 pb-10 sm:pb-14 px-4 sm:px-6 flex flex-col items-center">
         <div className="max-w-7xl w-full mx-auto relative z-10">
@@ -236,46 +212,7 @@ export const App: React.FC = () => {
         />
 
         {/* Estado de Carga adaptado al modo de vista actual (previene CLS) */}
-        {isLoading &&
-          (viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 py-2">
-              {SKELETON_SLOTS.map((i) => (
-                <div
-                  key={i}
-                  className="flex flex-col justify-between rounded-[28px] border border-white/[0.08] p-2.5 bg-gradient-to-b from-[#0b1936]/35 via-[#070b14] to-[#04060b]"
-                >
-                  <Skeleton className="w-full aspect-video rounded-[20px] bg-white/[0.04]" />
-                  <div className="px-3.5 pt-4 pb-3 space-y-3">
-                    <Skeleton className="h-3.5 w-2/5 rounded-full bg-white/[0.04]" />
-                    <Skeleton className="h-5 w-4/5 rounded-full bg-white/[0.07]" />
-                    <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between">
-                      <Skeleton className="h-3.5 w-28 rounded-full bg-white/[0.04]" />
-                      <Skeleton className="h-8 w-8 rounded-full bg-white/[0.05]" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col py-2 max-w-4xl mx-auto w-full gap-4">
-              {SKELETON_SLOTS.map((i) => (
-                <div
-                  key={i}
-                  className="p-3.5 sm:p-4 rounded-[26px] border border-white/[0.08] bg-gradient-to-b from-[#0b1936]/35 via-[#070b14] to-[#04060b] flex items-center justify-between gap-4"
-                >
-                  <div className="flex items-center gap-4 flex-1">
-                    <Skeleton className="w-24 h-18 sm:w-32 sm:h-20 rounded-[16px] bg-white/[0.04] shrink-0" />
-                    <div className="space-y-2.5 flex-1">
-                      <Skeleton className="h-3.5 w-32 rounded-full bg-white/[0.04]" />
-                      <Skeleton className="h-5 w-3/5 rounded-full bg-white/[0.07]" />
-                      <Skeleton className="h-3.5 w-24 rounded-full bg-white/[0.04]" />
-                    </div>
-                  </div>
-                  <Skeleton className="h-8 w-24 rounded-full bg-white/[0.05] shrink-0" />
-                </div>
-              ))}
-            </div>
-          ))}
+        {isLoading && <WorkFeedSkeletons viewMode={viewMode} count={ITEMS_PER_PAGE} />}
 
         {/* Estado de Error */}
         {!isLoading && error && (
@@ -330,7 +267,7 @@ export const App: React.FC = () => {
                   <WorkCard
                     key={work.id}
                     work={work}
-                    onSelect={handleSelectWork}
+                    onSelect={selectWork}
                     priority={offset === 0 && index < 3}
                   />
                 ))}
@@ -341,7 +278,7 @@ export const App: React.FC = () => {
                   <WorkTimelineItem
                     key={work.id}
                     work={work}
-                    onSelect={handleSelectWork}
+                    onSelect={selectWork}
                     isLast={index === works.length - 1}
                     priority={offset === 0 && index < 3}
                   />
@@ -409,17 +346,17 @@ export const App: React.FC = () => {
 
       {/* Modales del Sistema diferidos mediante code-splitting */}
       <React.Suspense fallback={null}>
-        {isLoginOpen && <LoginModal isOpen={isLoginOpen} onClose={handleCloseLogin} />}
+        {isLoginOpen && <LoginModal isOpen={isLoginOpen} onClose={closeLogin} />}
 
         {(isCreateOpen || !!workToEdit) && (
           <WorkFormModal
             isOpen={isCreateOpen || !!workToEdit}
-            onClose={handleCloseCreate}
+            onClose={closeCreate}
             onSuccess={() => {
               invalidateWorkDetailCache(selectedWorkId || undefined);
               void refetch(true);
               if (selectedWorkId) {
-                setDetailRefreshKey((prev) => prev + 1);
+                refreshDetail();
               }
             }}
             workToEdit={workToEdit}
@@ -431,9 +368,9 @@ export const App: React.FC = () => {
             workId={selectedWorkId}
             refreshKey={detailRefreshKey}
             isOpen={!!selectedWorkId}
-            onClose={handleCloseDetail}
-            onEdit={handleEditWork}
-            onDelete={handleRequestDelete}
+            onClose={closeDetail}
+            onEdit={editWork}
+            onDelete={requestDelete}
             onWorkUpdated={() => {
               invalidateWorkDetailCache(selectedWorkId || undefined);
               void refetch(true);
@@ -444,8 +381,8 @@ export const App: React.FC = () => {
         {!!workIdToDelete && (
           <ConfirmModal
             isOpen={!!workIdToDelete}
-            onClose={handleCancelDelete}
-            onConfirm={handleConfirmDeleteWork}
+            onClose={cancelDelete}
+            onConfirm={confirmDeleteWork}
             title="¿Eliminar este trabajo de MIBITURVEN?"
             message="Esta acción es irreversible: se eliminará el registro de la bitácora junto con todos sus archivos multimedia físicos en almacenamiento (RN-04)."
             confirmText="Eliminar Trabajo"

@@ -20,7 +20,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  const headers = new Headers(options.headers || {});
+  const headers = new Headers(options.headers);
 
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
     if (options.body instanceof Blob && options.body.type) {
@@ -48,9 +48,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       const errorJson = (await response.json()) as ApiErrorPayload;
       throw new ApiClientError(
         response.status,
-        errorJson.error?.code || 'ERROR',
-        errorJson.error?.message || 'Error en la solicitud al servidor.',
-        errorJson.error?.details || [],
+        errorJson.error.code,
+        errorJson.error.message,
+        errorJson.error.details,
       );
     }
     throw new ApiClientError(
@@ -79,7 +79,7 @@ export const apiClient = {
       body instanceof FormData ||
       body instanceof Blob ||
       body instanceof ArrayBuffer ||
-      (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(body));
+      ArrayBuffer.isView(body);
 
     return request<T>(endpoint, {
       ...options,

@@ -4,8 +4,8 @@ import cookieParser from 'cookie-parser';
 import path from 'node:path';
 import compression from 'compression';
 import { apiRouter } from './routes/index.js';
-import { errorHandler } from './middlewares/error-handler.middleware.js';
-import { AppError } from './errors/app-error.js';
+import { errorHandler } from './core/middlewares/error-handler.middleware.js';
+import { AppError } from './core/errors/app-error.js';
 
 export const app = express();
 

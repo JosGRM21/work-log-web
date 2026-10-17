@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { prisma } from '../../src/server/db/client.js';
+import { prisma } from '../../src/server/infra/db/client.js';
 
 describe('PostgreSQL Check Constraints (Integration)', () => {
   afterAll(async () => {
@@ -31,7 +31,19 @@ describe('PostgreSQL Check Constraints (Integration)', () => {
   });
 
   it('chk_media_assets_type debe rechazar tipos multimedia ajenos a image/video', async () => {
-    const work = await prisma.workItem.findFirst();
+    let work = await prisma.workItem.findFirst();
+    if (!work) {
+      const user = await prisma.user.findFirst();
+      expect(user).toBeTruthy();
+      work = await prisma.workItem.create({
+        data: {
+          userId: user!.id,
+          title: 'Trabajo Temporal Constraints',
+          status: 'pending',
+          referenceDate: new Date(),
+        },
+      });
+    }
     expect(work).toBeTruthy();
 
     await expect(
