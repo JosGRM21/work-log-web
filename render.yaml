@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: work-log-web
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run build && npm run prisma:deploy
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
