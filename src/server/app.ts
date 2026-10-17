@@ -5,6 +5,7 @@ import path from 'node:path';
 import compression from 'compression';
 import { apiRouter } from './routes/index.js';
 import { errorHandler } from './middlewares/error-handler.middleware.js';
+import { AppError } from './errors/app-error.js';
 
 export const app = express();
 
@@ -33,6 +34,16 @@ app.use(
 
 app.use('/api/v1', apiRouter);
 
+// Cierre estricto de la frontera /api (404 JSON para cualquier verbo en /api o /api/*)
+app.all('/api{/*splat}', (req, _res, next) => {
+  next(AppError.notFound(`Ruta de API no encontrada: ${req.method} ${req.originalUrl}`));
+});
+
+// Cierre estricto de uploads si el archivo estático no existe
+app.all('/uploads{/*splat}', (req, _res, next) => {
+  next(AppError.notFound(`Archivo no encontrado: ${req.originalUrl}`));
+});
+
 // Servir frontend compilado en producción (assets inmutables y no-cache para index.html)
 if (process.env.NODE_ENV === 'production') {
   const distDir = path.resolve(process.cwd(), './dist');
@@ -44,8 +55,13 @@ if (process.env.NODE_ENV === 'production') {
     }),
   );
 
+  app.all('/assets{/*splat}', (req, _res, next) => {
+    next(AppError.notFound(`Asset no encontrado: ${req.originalUrl}`));
+  });
+
   app.use(
     express.static(distDir, {
+      index: false,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('index.html')) {
           res.setHeader('Cache-Control', 'no-cache');
@@ -54,13 +70,16 @@ if (process.env.NODE_ENV === 'production') {
     }),
   );
 
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
-      return next();
-    }
+  // Sintaxis nativa de Express 5 para SPA fallback
+  app.get('/{*splat}', (_req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(distDir, 'index.html'));
   });
 }
+
+// Catch-all 404 agnóstico de verbo HTTP para cualquier otro recurso no resuelto
+app.use((req, _res, next) => {
+  next(AppError.notFound(`Recurso no encontrado: ${req.method} ${req.originalUrl}`));
+});
 
 app.use(errorHandler);
