@@ -9,7 +9,7 @@ interface NavbarProps {
   onOpenCreate: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenLogin, onOpenCreate }) => {
+const NavbarComponent: React.FC<NavbarProps> = ({ onOpenLogin, onOpenCreate }) => {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [isDarkMode, setIsDarkMode] = useState(true);
 
@@ -122,3 +122,5 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenLogin, onOpenCreate }) => 
     </header>
   );
 };
+
+export const Navbar = React.memo(NavbarComponent);

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { WorkStatus } from '../../../shared/types.js';
 import { ArrowUpDown, LayoutGrid, ListTree } from 'lucide-react';
 
@@ -20,7 +20,7 @@ interface FeedFiltersProps {
   };
 }
 
-export const FeedFilters: React.FC<FeedFiltersProps> = ({
+const FeedFiltersComponent: React.FC<FeedFiltersProps> = ({
   currentStatus,
   onStatusChange,
   currentOrder,
@@ -35,7 +35,8 @@ export const FeedFilters: React.FC<FeedFiltersProps> = ({
     label: string;
     count?: number;
     dotColor: string;
-  }> = [
+  }> = useMemo(
+    () => [
       {
         id: 'all',
         label: 'Todos',
@@ -60,7 +61,9 @@ export const FeedFilters: React.FC<FeedFiltersProps> = ({
         count: counts?.pending,
         dotColor: 'bg-[#9aa0a6]',
       },
-    ];
+    ],
+    [counts?.all, counts?.completed, counts?.in_progress, counts?.pending],
+  );
 
   return (
     <div className="relative w-full pt-2 pb-6">
@@ -171,3 +174,5 @@ export const FeedFilters: React.FC<FeedFiltersProps> = ({
     </div>
   );
 };
+
+export const FeedFilters = React.memo(FeedFiltersComponent);

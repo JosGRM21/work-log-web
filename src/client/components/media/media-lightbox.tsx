@@ -13,7 +13,7 @@ import {
   Download,
   Play,
 } from 'lucide-react';
-import { cn } from 'cn';
+import { cn } from '@/lib/utils';
 
 interface MediaLightboxProps {
   isOpen: boolean;
@@ -231,13 +231,13 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
                   {item.type === 'image' ? (
                     <img src={item.url} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full bg-neutral-900 flex items-center justify-center relative">
-                      <video src={item.url} className="w-full h-full object-cover opacity-60" preload="metadata" />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Play className="w-3 h-3 text-white fill-current" />
+                    <div className="w-full h-full bg-gradient-to-br from-[#0c1424] to-[#04060c] flex items-center justify-center relative">
+                      <div className="w-5 h-5 rounded-full bg-[#1a73e8]/80 flex items-center justify-center">
+                        <Play className="w-2.5 h-2.5 text-white fill-current ml-0.5" />
                       </div>
                     </div>
                   )}
+
                 </button>
               );
             })}

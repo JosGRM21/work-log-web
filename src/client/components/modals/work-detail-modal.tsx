@@ -2,7 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { WorkItemDetail, WorkStatus, MediaAssetDTO } from '../../../shared/types.js';
 import { apiClient } from '../../api/client.js';
 import { useAuth } from '../../context/auth-context.js';
-import { cn } from 'cn';
+import { cn, formatWorkDate } from '@/lib/utils';
+
+import { getCachedWorkDetail, setCachedWorkDetail } from '../../hooks/use-works.js';
 
 import {
   Dialog,
@@ -126,7 +128,8 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
   useEffect(() => {
     if (!carouselApi) return;
     const handleSelect = () => {
-      setSelectedMediaIndex(carouselApi.selectedScrollSnap());
+      const snap = carouselApi.selectedScrollSnap();
+      setSelectedMediaIndex((prev) => (prev !== snap ? snap : prev));
     };
     carouselApi.on('select', handleSelect);
     return () => {
@@ -134,39 +137,57 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
     };
   }, [carouselApi]);
 
-  useEffect(() => {
-    if (!carouselApi) return;
-    if (carouselApi.selectedScrollSnap() !== selectedMediaIndex) {
-      carouselApi.scrollTo(selectedMediaIndex);
-    }
-  }, [selectedMediaIndex, carouselApi]);
+  const handleSelectMedia = useCallback(
+    (idx: number) => {
+      setSelectedMediaIndex(idx);
+      carouselApi?.scrollTo(idx);
+    },
+    [carouselApi],
+  );
 
-  const loadWork = useCallback(async () => {
-    if (!workId) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await apiClient.get<WorkItemDetail>(`/works/${workId}`);
-      setWork(data);
-      setSelectedMediaIndex((prev) =>
-        data.media.length > 0 ? Math.min(prev, data.media.length - 1) : 0,
-      );
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [workId]);
+  const loadWork = useCallback(
+    async (bypassCache = false) => {
+      if (!workId) return;
+      const cached = getCachedWorkDetail(workId);
+      if (cached && !bypassCache) {
+        setWork(cached);
+        setSelectedMediaIndex((prev) =>
+          cached.media.length > 0 ? Math.min(prev, cached.media.length - 1) : 0,
+        );
+        setIsLoading(false);
+        setError(null);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await apiClient.get<WorkItemDetail>(`/works/${workId}`);
+        setCachedWorkDetail(workId, data);
+
+        setWork(data);
+        setSelectedMediaIndex((prev) =>
+          data.media.length > 0 ? Math.min(prev, data.media.length - 1) : 0,
+        );
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [workId],
+  );
 
   useEffect(() => {
     if (isOpen && workId) {
-      void loadWork();
+      void loadWork(refreshKey > 0);
       setActiveTab('dossier');
     } else {
       setWork(null);
       setSelectedMediaIndex(0);
     }
   }, [isOpen, workId, refreshKey, loadWork]);
+
 
   const handleDeleteMediaConfirm = async (mediaId: string) => {
     setIsDeletingMedia(true);
@@ -191,19 +212,8 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
     }
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'No definida';
-    try {
-      const [year, month, day] = dateStr.split('-');
-      return new Intl.DateTimeFormat('es-ES', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      }).format(new Date(Number(year), Number(month) - 1, Number(day)));
-    } catch {
-      return dateStr;
-    }
-  };
+  const formatDate = (dateStr: string | null) => formatWorkDate(dateStr);
+
 
   const calculateDuration = (startStr: string | null, endStr: string | null) => {
     if (!startStr) return null;
@@ -428,11 +438,15 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                   className="relative w-full h-full max-h-[500px] flex items-center justify-center cursor-pointer group/video"
                                   onClick={() => setLightboxIndex(idx)}
                                 >
-                                  <video
-                                    src={item.url}
-                                    className="w-full h-full object-contain"
-                                    preload="metadata"
-                                  />
+                                  {idx === selectedMediaIndex ? (
+                                    <video
+                                      src={item.url}
+                                      className="w-full h-full object-contain"
+                                      preload="metadata"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center bg-black/60" />
+                                  )}
                                   <div className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/30 transition-colors">
                                     <div className="w-14 h-14 rounded-full bg-[#1a73e8] text-white flex items-center justify-center shadow-[0_0_25px_rgba(26,115,232,0.6)] transition-transform group-hover/video:scale-110">
                                       <Play className="w-6 h-6 fill-current ml-0.5" />
@@ -560,7 +574,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                             <button
                               key={item.id}
                               type="button"
-                              onClick={() => setSelectedMediaIndex(index)}
+                              onClick={() => handleSelectMedia(index)}
                               className={cn(
                                 'relative w-20 sm:w-24 lg:w-auto shrink-0 aspect-video rounded-xl overflow-hidden border-2 transition-all duration-200 focus:outline-none bg-black/60 group/thumb',
                                 isSelected
@@ -576,19 +590,16 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                   className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
                                 />
                               ) : (
-                                <div className="w-full h-full relative flex items-center justify-center bg-neutral-950">
-                                  <video
-                                    src={item.url}
-                                    className="w-full h-full object-cover opacity-75"
-                                    preload="metadata"
-                                  />
-                                  <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className="w-6 h-6 rounded-full bg-[#1a73e8] text-white flex items-center justify-center shadow-md">
-                                      <Play className="w-3 h-3 fill-current ml-0.5" />
-                                    </div>
+                                <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-[#0c1424] to-[#04060c]">
+                                  <div className="w-6 h-6 rounded-full bg-[#1a73e8] text-white flex items-center justify-center shadow-md">
+                                    <Play className="w-3 h-3 fill-current ml-0.5" />
                                   </div>
+                                  <span className="absolute bottom-1 right-1 text-[8px] font-bold text-cyan-300 bg-black/80 px-1 rounded">
+                                    VIDEO
+                                  </span>
                                 </div>
                               )}
+
                               {isSelected && (
                                 <div className="absolute inset-0 bg-[#1a73e8]/15 pointer-events-none" />
                               )}
@@ -741,14 +752,43 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                               </span>
                             </div>
 
+                            {duration && (
+                              <div className="flex items-center justify-between text-xs py-2.5 border-b border-white/[0.08]">
+                                <span className="text-[#9aa0a6] flex items-center gap-1.5">
+                                  <Hourglass className="w-3.5 h-3.5 text-[#8ab4f8]" />
+                                  Duración del Trabajo
+                                </span>
+                                <span className="font-medium text-white">{duration}</span>
+                              </div>
+                            )}
+
                             <div className="flex items-center justify-between text-xs py-2.5 border-b border-white/[0.08]">
                               <span className="text-[#9aa0a6] flex items-center gap-1.5">
                                 <Wrench className="w-3.5 h-3.5 text-[#fdd663]" />
                                 Fecha de Próximo Mantenimiento
                               </span>
-                              <span className="font-medium text-white">
-                                {'No programada'}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={cn(
+                                    'font-medium',
+                                    work.next_maintenance_date ? 'text-[#fdd663]' : 'text-neutral-400 italic',
+                                  )}
+                                >
+                                  {work.next_maintenance_date
+                                    ? formatDate(work.next_maintenance_date)
+                                    : 'No programada'}
+                                </span>
+                                {isAuthenticated && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onEdit(work)}
+                                    className="p-1 rounded-md text-[#9aa0a6] hover:text-[#8ab4f8] hover:bg-white/[0.06] transition-colors"
+                                    title="Editar fecha de mantenimiento"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>

@@ -77,6 +77,25 @@ describe('Work Validator (Unit)', () => {
       expect(result.referenceDate).toBeInstanceOf(Date);
       expect(result.startDate).toBeInstanceOf(Date);
       expect(result.endDate).toBeNull();
+      expect(result.nextMaintenanceDate).toBeNull();
+    });
+
+    it('debe aceptar y parsear next_maintenance_date válida', () => {
+      const result = validateCreateWorkInput({
+        title: 'Mantenimiento Bomba',
+        next_maintenance_date: '2026-12-15',
+      });
+      expect(result.nextMaintenanceDate).toBeInstanceOf(Date);
+      expect(result.nextMaintenanceDate?.toISOString().startsWith('2026-12-15')).toBe(true);
+    });
+
+    it('debe rechazar next_maintenance_date con formato inválido', () => {
+      expect(() =>
+        validateCreateWorkInput({
+          title: 'Mantenimiento Bomba',
+          next_maintenance_date: 'fecha-incorrecta',
+        }),
+      ).toThrowError(AppError);
     });
   });
 
@@ -89,6 +108,20 @@ describe('Work Validator (Unit)', () => {
       const result = validateUpdateWorkInput({ status: 'completed' });
       expect(result.status).toBe('completed');
       expect(result.title).toBeUndefined();
+    });
+
+    it('debe aceptar y actualizar next_maintenance_date', () => {
+      const result = validateUpdateWorkInput({ next_maintenance_date: '2027-01-20' });
+      expect(result.nextMaintenanceDate).toBeInstanceOf(Date);
+      expect(result.nextMaintenanceDate?.toISOString().startsWith('2027-01-20')).toBe(true);
+    });
+
+    it('debe permitir limpiar next_maintenance_date enviando null o vacío', () => {
+      const resultNull = validateUpdateWorkInput({ next_maintenance_date: null });
+      expect(resultNull.nextMaintenanceDate).toBeNull();
+
+      const resultEmpty = validateUpdateWorkInput({ next_maintenance_date: '' });
+      expect(resultEmpty.nextMaintenanceDate).toBeNull();
     });
   });
 

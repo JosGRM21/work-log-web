@@ -11,7 +11,7 @@ import {
   Video as VideoIcon,
   CheckCircle2,
 } from 'lucide-react';
-import { cn } from 'cn';
+import { cn } from '@/lib/utils';
 
 interface MediaUploaderProps {
   workId: string;
@@ -44,17 +44,20 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stagedFilesRef = useRef(stagedFiles);
+  stagedFilesRef.current = stagedFiles;
 
-  // Limpiar object URLs generadas para evitar fugas de memoria
+  // Limpiar object URLs generadas únicamente al desmontar el componente
   useEffect(() => {
     return () => {
-      stagedFiles.forEach((item) => {
+      stagedFilesRef.current.forEach((item) => {
         if (item.previewUrl) {
           URL.revokeObjectURL(item.previewUrl);
         }
       });
     };
-  }, [stagedFiles]);
+  }, []);
+
 
   const availableImages = Math.max(0, MAX_IMAGES_ALLOWED - currentImageCount);
   const availableVideos = Math.max(0, MAX_VIDEOS_ALLOWED - currentVideoCount);

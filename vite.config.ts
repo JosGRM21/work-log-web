@@ -25,4 +25,23 @@ export default defineConfig({
       '@server': path.resolve(import.meta.dirname, './src/server'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
+            return 'vendor-react';
+          }
+          if (id.includes('node_modules/@base-ui') || id.includes('node_modules/embla-carousel')) {
+            return 'vendor-ui';
+          }
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-icons';
+          }
+        },
+      },
+    },
+  },
+
 });
+

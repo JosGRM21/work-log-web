@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { useWorks } from './hooks/use-works.js';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useWorks, invalidateWorkDetailCache } from './hooks/use-works.js';
 import { apiClient } from './api/client.js';
-import type { WorkItemDetail } from '../shared/types.js';
+import type { WorkItemDetail, WorkStatus } from '../shared/types.js';
 import { Navbar } from './components/layout/navbar.js';
 import { HeroSection } from './components/feed/hero-section.js';
 import { FeedFilters, type ViewMode } from './components/feed/feed-filters.js';
@@ -62,39 +62,78 @@ export const App: React.FC = () => {
   const [workIdToDelete, setWorkIdToDelete] = useState<string | null>(null);
   const [isDeletingWork, setIsDeletingWork] = useState(false);
 
-  // Métricas para los KPIs del Hero
-  const metrics = useMemo(() => {
-    const completed = works.filter((w) => w.status === 'completed').length;
-    const inProgress = works.filter((w) => w.status === 'in_progress').length;
-    const pending = works.filter((w) => w.status === 'pending').length;
-    const totalMedia = works.reduce(
-      (acc, w) => acc + (w.media_count?.images || 0) + (w.media_count?.videos || 0),
-      0,
-    );
-    return {
-      total: total || works.length,
-      completed,
-      inProgress,
-      pending,
-      totalMedia,
-    };
-  }, [works, total]);
+  // Callbacks de navegación y modales estabilizados
+  const handleOpenLogin = useCallback(() => setIsLoginOpen(true), []);
+  const handleCloseLogin = useCallback(() => setIsLoginOpen(false), []);
+  const handleOpenCreate = useCallback(() => setIsCreateOpen(true), []);
+  const handleCloseCreate = useCallback(() => {
+    setIsCreateOpen(false);
+    setWorkToEdit(null);
+  }, []);
+  const handleSelectWork = useCallback((id: string) => setSelectedWorkId(id), []);
+  const handleCloseDetail = useCallback(() => setSelectedWorkId(null), []);
+  const handleEditWork = useCallback((work: WorkItemDetail) => setWorkToEdit(work), []);
+  const handleRequestDelete = useCallback((workId: string) => setWorkIdToDelete(workId), []);
+  const handleCancelDelete = useCallback(() => setWorkIdToDelete(null), []);
+  const handleOrderToggle = useCallback(
+    () => setOrder(order === 'desc' ? 'asc' : 'desc'),
+    [order, setOrder],
+  );
+
+  const handleStatusChange = useCallback(
+    (status: WorkStatus | 'all') => setStatusFilter(status),
+    [setStatusFilter],
+  );
+  const handleViewModeChange = useCallback((mode: ViewMode) => setViewMode(mode), []);
+
+  // Métricas estabilizadas para los KPIs del Hero (no mutan bruscamente al paginar)
+  const [metrics, setMetrics] = useState({
+    total: 0,
+    completed: 0,
+    inProgress: 0,
+    pending: 0,
+    totalMedia: 0,
+  });
+
+  useEffect(() => {
+    if (works.length > 0 && statusFilter === 'all' && offset === 0) {
+      const completed = works.filter((w) => w.status === 'completed').length;
+      const inProgress = works.filter((w) => w.status === 'in_progress').length;
+      const pending = works.filter((w) => w.status === 'pending').length;
+      const totalMedia = works.reduce(
+        (acc, w) => acc + (w.media_count?.images || 0) + (w.media_count?.videos || 0),
+        0,
+      );
+      setMetrics({
+        total: total || works.length,
+        completed,
+        inProgress,
+        pending,
+        totalMedia,
+      });
+    } else if (total > 0) {
+      setMetrics((prev) => (prev.total !== total ? { ...prev, total } : prev));
+    }
+  }, [works, total, statusFilter, offset]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const currentPage = Math.floor(offset / limit) + 1;
   const fromRecord = offset + 1;
   const toRecord = Math.min(offset + works.length, total);
 
-  const handlePageChange = (page: number) => {
-    if (page < 1 || page > totalPages || page === currentPage) return;
-    setOffset((page - 1) * limit);
-    const catalogElement = document.getElementById('catalogo-obras');
-    if (catalogElement) {
-      catalogElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
+  const handlePageChange = useCallback(
+    (page: number) => {
+      if (page < 1 || page > totalPages || page === currentPage) return;
+      setOffset((page - 1) * limit);
+      const catalogElement = document.getElementById('catalogo-obras');
+      if (catalogElement) {
+        catalogElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    },
+    [totalPages, currentPage, limit, setOffset],
+  );
 
-  const getPageNumbers = () => {
+  const pageNumbers = useMemo(() => {
     const pages: (number | 'ellipsis')[] = [];
     if (totalPages <= 5) {
       for (let i = 1; i <= totalPages; i++) {
@@ -110,16 +149,17 @@ export const App: React.FC = () => {
       }
     }
     return pages;
-  };
+  }, [totalPages, currentPage]);
 
   const handleConfirmDeleteWork = async () => {
     if (!workIdToDelete) return;
     setIsDeletingWork(true);
     try {
       await apiClient.delete(`/works/${workIdToDelete}`);
+      invalidateWorkDetailCache(workIdToDelete);
       setSelectedWorkId(null);
       setWorkIdToDelete(null);
-      await refetch();
+      await refetch(true);
       toast.add({
         title: 'Trabajo eliminado',
         description: 'El proyecto y sus archivos multimedia fueron purgados físicamente.',
@@ -139,7 +179,8 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-black text-white relative overflow-x-hidden flex flex-col antialiased selection:bg-[#1a73e8]/30 selection:text-blue-100">
       {/* Barra de Navegación */}
-      <Navbar onOpenLogin={() => setIsLoginOpen(true)} onOpenCreate={() => setIsCreateOpen(true)} />
+      <Navbar onOpenLogin={handleOpenLogin} onOpenCreate={handleOpenCreate} />
+
 
       {/* Sección inicial (Hero) */}
       <section className="google-one-hero w-full pt-20 sm:pt-28 pb-10 sm:pb-14 px-4 sm:px-6 flex flex-col items-center">
@@ -162,12 +203,12 @@ export const App: React.FC = () => {
         {/* Barra de Filtros, Ordenamiento y Modos de Vista */}
         <FeedFilters
           currentStatus={statusFilter}
-          onStatusChange={setStatusFilter}
+          onStatusChange={handleStatusChange}
           currentOrder={order}
-          onOrderToggle={() => setOrder(order === 'desc' ? 'asc' : 'desc')}
+          onOrderToggle={handleOrderToggle}
           totalResults={works.length}
           viewMode={viewMode}
-          onViewModeChange={setViewMode}
+          onViewModeChange={handleViewModeChange}
           counts={{
             all: metrics.total,
             completed: metrics.completed,
@@ -233,7 +274,7 @@ export const App: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setStatusFilter('all')}
+                onClick={() => handleStatusChange('all')}
                 className="rounded-full border-white/15 text-[#8ab4f8] hover:bg-[#1a73e8]/15"
               >
                 Ver todos los proyectos
@@ -248,7 +289,7 @@ export const App: React.FC = () => {
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {works.map((work) => (
-                  <WorkCard key={work.id} work={work} onClick={() => setSelectedWorkId(work.id)} />
+                  <WorkCard key={work.id} work={work} onClick={() => handleSelectWork(work.id)} />
                 ))}
               </div>
             ) : (
@@ -257,7 +298,7 @@ export const App: React.FC = () => {
                   <WorkTimelineItem
                     key={work.id}
                     work={work}
-                    onClick={() => setSelectedWorkId(work.id)}
+                    onClick={() => handleSelectWork(work.id)}
                     isLast={index === works.length - 1}
                   />
                 ))}
@@ -290,7 +331,7 @@ export const App: React.FC = () => {
                       />
                     </PaginationItem>
 
-                    {getPageNumbers().map((page, index) => {
+                    {pageNumbers.map((page, index) => {
                       if (page === 'ellipsis') {
                         return (
                           <PaginationItem key={`ellipsis-${index}`}>
@@ -322,21 +363,20 @@ export const App: React.FC = () => {
             </div>
           </>
         )}
+
       </main>
 
       {/* Modales del Sistema diferidos mediante code-splitting */}
       <React.Suspense fallback={null}>
-        {isLoginOpen && <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />}
+        {isLoginOpen && <LoginModal isOpen={isLoginOpen} onClose={handleCloseLogin} />}
 
         {(isCreateOpen || !!workToEdit) && (
           <WorkFormModal
             isOpen={isCreateOpen || !!workToEdit}
-            onClose={() => {
-              setIsCreateOpen(false);
-              setWorkToEdit(null);
-            }}
+            onClose={handleCloseCreate}
             onSuccess={() => {
-              void refetch();
+              invalidateWorkDetailCache(selectedWorkId || undefined);
+              void refetch(true);
               if (selectedWorkId) {
                 setDetailRefreshKey((prev) => prev + 1);
               }
@@ -350,21 +390,20 @@ export const App: React.FC = () => {
             workId={selectedWorkId}
             refreshKey={detailRefreshKey}
             isOpen={!!selectedWorkId}
-            onClose={() => setSelectedWorkId(null)}
-            onEdit={(work) => {
-              setWorkToEdit(work);
+            onClose={handleCloseDetail}
+            onEdit={handleEditWork}
+            onDelete={handleRequestDelete}
+            onWorkUpdated={() => {
+              invalidateWorkDetailCache(selectedWorkId || undefined);
+              void refetch(true);
             }}
-            onDelete={(workId) => {
-              setWorkIdToDelete(workId);
-            }}
-            onWorkUpdated={() => void refetch()}
           />
         )}
 
         {!!workIdToDelete && (
           <ConfirmModal
             isOpen={!!workIdToDelete}
-            onClose={() => setWorkIdToDelete(null)}
+            onClose={handleCancelDelete}
             onConfirm={handleConfirmDeleteWork}
             title="¿Eliminar este trabajo de MIBITURVEN?"
             message="Esta acción es irreversible: se eliminará el registro de la bitácora junto con todos sus archivos multimedia físicos en almacenamiento (RN-04)."
@@ -374,6 +413,7 @@ export const App: React.FC = () => {
           />
         )}
       </React.Suspense>
+
     </div>
   );
 };

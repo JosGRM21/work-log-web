@@ -111,12 +111,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 html,
 body {
   max-width: 100%;
   overflow-x: hidden;
   background-color: #000000;
 }
+
 
 @theme inline {
   --font-heading: 'Google Sans', sans-serif;

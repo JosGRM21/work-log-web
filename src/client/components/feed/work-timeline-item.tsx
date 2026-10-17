@@ -1,5 +1,6 @@
 import React from 'react';
 import type { WorkItemSummary, WorkStatus } from '../../../shared/types.js';
+import { formatWorkDate } from '@/lib/utils';
 import {
   Image as ImageIcon,
   Video as VideoIcon,
@@ -39,25 +40,11 @@ const STATUS_CONFIG: Record<
   },
 };
 
-export const WorkTimelineItem: React.FC<WorkTimelineItemProps> = ({
+const WorkTimelineItemComponent: React.FC<WorkTimelineItemProps> = ({
   work,
   onClick,
   isLast = false,
 }) => {
-  const formatDate = (dateStr: string) => {
-    try {
-      const [year, month, day] = dateStr.split('-');
-      const date = new Date(Number(year), Number(month) - 1, Number(day));
-      return new Intl.DateTimeFormat('es-ES', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      }).format(date);
-    } catch {
-      return dateStr;
-    }
-  };
-
   const status = STATUS_CONFIG[work.status] || STATUS_CONFIG.pending;
   const hasMedia = !!work.media_preview;
   const isVideo = work.media_preview?.type === 'video';
@@ -123,7 +110,7 @@ export const WorkTimelineItem: React.FC<WorkTimelineItemProps> = ({
             <div className="flex items-center gap-2 flex-wrap text-xs">
               <span className="inline-flex items-center gap-1.5 text-[#9aa0a6]">
                 <Calendar className="w-3.5 h-3.5 text-[#669df6]" />
-                {formatDate(work.reference_date)}
+                {formatWorkDate(work.reference_date)}
               </span>
               <span className="text-white/20">•</span>
               <span className="text-[11px] font-medium tracking-wide text-[#669df6]/90">
@@ -176,3 +163,16 @@ export const WorkTimelineItem: React.FC<WorkTimelineItemProps> = ({
     </div>
   );
 };
+
+export const WorkTimelineItem = React.memo(WorkTimelineItemComponent, (prev, next) => {
+  return (
+    prev.work.id === next.work.id &&
+    prev.work.status === next.work.status &&
+    prev.work.title === next.work.title &&
+    prev.work.reference_date === next.work.reference_date &&
+    prev.work.media_preview?.url === next.work.media_preview?.url &&
+    prev.work.media_count?.images === next.work.media_count?.images &&
+    prev.work.media_count?.videos === next.work.media_count?.videos &&
+    prev.isLast === next.isLast
+  );
+});

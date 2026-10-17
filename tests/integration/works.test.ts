@@ -114,6 +114,7 @@ describe('Works CRUD API (Integration)', () => {
         reference_date: '2026-10-12',
         start_date: '2026-10-15',
         end_date: '2026-10-25',
+        next_maintenance_date: '2027-04-15',
       }),
     });
     expect(res.status).toBe(201);
@@ -121,9 +122,14 @@ describe('Works CRUD API (Integration)', () => {
     expect(json.id).toBeTruthy();
     expect(json.title).toBe('Construcción de Escalera Metálica');
     createdWorkId = json.id;
+
+    const detailRes = await fetch(`${baseUrl}/works/${createdWorkId}`);
+    expect(detailRes.status).toBe(200);
+    const detailJson = (await detailRes.json()) as { next_maintenance_date: string };
+    expect(detailJson.next_maintenance_date).toBe('2027-04-15');
   });
 
-  it('PATCH /works/:id debe actualizar parcialmente el trabajo', async () => {
+  it('PATCH /works/:id debe actualizar parcialmente el trabajo y su fecha de próximo mantenimiento', async () => {
     const res = await fetch(`${baseUrl}/works/${createdWorkId}`, {
       method: 'PATCH',
       headers: {
@@ -133,11 +139,17 @@ describe('Works CRUD API (Integration)', () => {
       body: JSON.stringify({
         status: 'in_progress',
         description: 'Actualización en curso.',
+        next_maintenance_date: '2027-06-20',
       }),
     });
     expect(res.status).toBe(200);
     const json = (await res.json()) as { status: string };
     expect(json.status).toBe('in_progress');
+
+    const detailRes = await fetch(`${baseUrl}/works/${createdWorkId}`);
+    expect(detailRes.status).toBe(200);
+    const detailJson = (await detailRes.json()) as { next_maintenance_date: string };
+    expect(detailJson.next_maintenance_date).toBe('2027-06-20');
   });
 
   it('PATCH /works/:id debe rechazar incongruencias contra fechas existentes', async () => {

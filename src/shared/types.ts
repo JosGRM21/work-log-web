@@ -31,6 +31,7 @@ export interface WorkItemSummary {
   title: string;
   status: WorkStatus;
   reference_date: string;
+  next_maintenance_date?: string | null;
   media_preview: MediaPreview | null;
   media_count: MediaCount;
   created_at: string;
@@ -53,6 +54,7 @@ export interface WorkItemDetail {
   reference_date: string;
   start_date: string | null;
   end_date: string | null;
+  next_maintenance_date: string | null;
   created_at: string;
   updated_at: string;
   media: MediaAssetDTO[];

@@ -91,6 +91,7 @@ export class WorkService {
         title: item.title,
         status: item.status as WorkStatus,
         reference_date: formatDateToIsoDateOnly(item.referenceDate)!,
+        next_maintenance_date: formatDateToIsoDateOnly(item.nextMaintenanceDate),
         media_preview: mediaPreview,
         media_count: mediaCount,
         created_at: item.createdAt.toISOString(),
@@ -135,6 +136,7 @@ export class WorkService {
       reference_date: formatDateToIsoDateOnly(item.referenceDate)!,
       start_date: formatDateToIsoDateOnly(item.startDate),
       end_date: formatDateToIsoDateOnly(item.endDate),
+      next_maintenance_date: formatDateToIsoDateOnly(item.nextMaintenanceDate),
       created_at: item.createdAt.toISOString(),
       updated_at: item.updatedAt.toISOString(),
       media: item.mediaAssets.map((asset) => ({
@@ -158,6 +160,7 @@ export class WorkService {
         referenceDate: data.referenceDate,
         startDate: data.startDate,
         endDate: data.endDate,
+        nextMaintenanceDate: data.nextMaintenanceDate,
       },
       select: {
         id: true,
@@ -209,6 +212,9 @@ export class WorkService {
           ...(data.referenceDate !== undefined ? { referenceDate: data.referenceDate } : {}),
           ...(data.startDate !== undefined ? { startDate: data.startDate } : {}),
           ...(data.endDate !== undefined ? { endDate: data.endDate } : {}),
+          ...(data.nextMaintenanceDate !== undefined
+            ? { nextMaintenanceDate: data.nextMaintenanceDate }
+            : {}),
         },
         select: {
           id: true,

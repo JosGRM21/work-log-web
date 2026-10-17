@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Briefcase, CheckCircle2, Clock, Camera } from 'lucide-react';
 
 interface HeroSectionProps {
@@ -17,21 +17,27 @@ interface AnimatedMetricValueProps {
 }
 
 /**
- * Componente de conteo animado con curva easeOutExpo y entrada suave (blur + fade)
+ * Componente de conteo animado optimizado con curva easeOutExpo y prevención de animación redundante
  */
 const AnimatedMetricValue: React.FC<AnimatedMetricValueProps> = ({
   value,
-  duration = 1400,
+  duration = 1000,
   delay = 0,
   isLoading = false,
 }) => {
-  const [displayValue, setDisplayValue] = useState(0);
-  const [isVisible, setIsVisible] = useState(false);
+  const [displayValue, setDisplayValue] = useState(value);
+  const [isVisible, setIsVisible] = useState(!isLoading);
+  const prevValueRef = useRef(value);
 
   useEffect(() => {
     if (isLoading) {
-      setIsVisible(false);
-      setDisplayValue(0);
+      return;
+    }
+
+    setIsVisible(true);
+    const startVal = prevValueRef.current;
+    if (startVal === value) {
+      setDisplayValue(value);
       return;
     }
 
@@ -39,13 +45,6 @@ const AnimatedMetricValue: React.FC<AnimatedMetricValueProps> = ({
     let startTime: number | null = null;
 
     const timerId = window.setTimeout(() => {
-      setIsVisible(true);
-
-      if (value === 0) {
-        setDisplayValue(0);
-        return;
-      }
-
       const animate = (timestamp: number) => {
         if (!startTime) startTime = timestamp;
         const elapsed = timestamp - startTime;
@@ -53,12 +52,14 @@ const AnimatedMetricValue: React.FC<AnimatedMetricValueProps> = ({
 
         // Curva easeOutExpo para un frenado elegante al llegar al número final
         const easedProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-        setDisplayValue(Math.round(easedProgress * value));
+        const current = Math.round(startVal + (value - startVal) * easedProgress);
+        setDisplayValue(current);
 
         if (progress < 1) {
           frameId = window.requestAnimationFrame(animate);
         } else {
           setDisplayValue(value);
+          prevValueRef.current = value;
         }
       };
 
@@ -73,17 +74,18 @@ const AnimatedMetricValue: React.FC<AnimatedMetricValueProps> = ({
 
   return (
     <span
-      className={`inline-block tabular-nums transition-all duration-700 ease-out ${isVisible
+      className={`inline-block tabular-nums transition-all duration-700 ease-out ${
+        isVisible
           ? 'opacity-100 translate-y-0 blur-0'
           : 'opacity-0 translate-y-2 blur-[4px]'
-        }`}
+      }`}
     >
       {displayValue.toLocaleString('es-ES')}
     </span>
   );
 };
 
-export const HeroSection: React.FC<HeroSectionProps> = ({
+const HeroSectionComponent: React.FC<HeroSectionProps> = ({
   totalWorks,
   completedCount,
   inProgressCount,
@@ -183,3 +185,5 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
     </div>
   );
 };
+
+export const HeroSection = React.memo(HeroSectionComponent);

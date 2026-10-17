@@ -1,5 +1,6 @@
 import React from 'react';
 import type { WorkItemSummary, WorkStatus } from '../../../shared/types.js';
+import { formatWorkDate } from '@/lib/utils';
 import {
   Image as ImageIcon,
   Video as VideoIcon,
@@ -47,21 +48,7 @@ const STATUS_CONFIG: Record<
   },
 };
 
-export const WorkCard: React.FC<WorkCardProps> = ({ work, onClick }) => {
-  const formatDate = (dateStr: string) => {
-    try {
-      const [year, month, day] = dateStr.split('-');
-      const date = new Date(Number(year), Number(month) - 1, Number(day));
-      return new Intl.DateTimeFormat('es-ES', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      }).format(date);
-    } catch {
-      return dateStr;
-    }
-  };
-
+const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onClick }) => {
   const hasMedia = !!work.media_preview;
   const isVideo = work.media_preview?.type === 'video';
   const status = STATUS_CONFIG[work.status] || STATUS_CONFIG.pending;
@@ -166,7 +153,7 @@ export const WorkCard: React.FC<WorkCardProps> = ({ work, onClick }) => {
           <div className="flex items-center gap-2 text-xs text-[#80868b]">
             <span className="inline-flex items-center gap-1.5 text-[#9aa0a6] font-normal">
               <Calendar className="w-3.5 h-3.5 text-[#669df6]" />
-              {formatDate(work.reference_date)}
+              {formatWorkDate(work.reference_date)}
             </span>
           </div>
 
@@ -190,3 +177,15 @@ export const WorkCard: React.FC<WorkCardProps> = ({ work, onClick }) => {
     </article>
   );
 };
+
+export const WorkCard = React.memo(WorkCardComponent, (prev, next) => {
+  return (
+    prev.work.id === next.work.id &&
+    prev.work.status === next.work.status &&
+    prev.work.title === next.work.title &&
+    prev.work.reference_date === next.work.reference_date &&
+    prev.work.media_preview?.url === next.work.media_preview?.url &&
+    prev.work.media_count?.images === next.work.media_count?.images &&
+    prev.work.media_count?.videos === next.work.media_count?.videos
+  );
+});

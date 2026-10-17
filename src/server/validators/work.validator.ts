@@ -17,6 +17,7 @@ export interface CreateWorkDTO {
   referenceDate: Date;
   startDate?: Date | null;
   endDate?: Date | null;
+  nextMaintenanceDate?: Date | null;
 }
 
 export interface UpdateWorkDTO {
@@ -26,6 +27,7 @@ export interface UpdateWorkDTO {
   referenceDate?: Date;
   startDate?: Date | null;
   endDate?: Date | null;
+  nextMaintenanceDate?: Date | null;
 }
 
 export function parseDateOnly(val: unknown, fieldName: string): Date | null {
@@ -126,7 +128,7 @@ export function parseListWorksQuery(query: Record<string, unknown>): ListWorksQu
 }
 
 export function validateCreateWorkInput(body: Record<string, unknown>): CreateWorkDTO {
-  const { title, description, status, reference_date, start_date, end_date } = body ?? {};
+  const { title, description, status, reference_date, start_date, end_date, next_maintenance_date } = body ?? {};
 
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
     throw AppError.badRequest('El título (title) es obligatorio y no puede estar vacío.');
@@ -162,6 +164,7 @@ export function validateCreateWorkInput(body: Record<string, unknown>): CreateWo
 
   const startDate = parseDateOnly(start_date, 'start_date');
   const endDate = parseDateOnly(end_date, 'end_date');
+  const nextMaintenanceDate = parseDateOnly(next_maintenance_date, 'next_maintenance_date');
 
   validateDateCoherence(startDate, endDate);
 
@@ -173,6 +176,7 @@ export function validateCreateWorkInput(body: Record<string, unknown>): CreateWo
     referenceDate,
     startDate,
     endDate,
+    nextMaintenanceDate,
   };
 }
 
@@ -223,6 +227,10 @@ export function validateUpdateWorkInput(body: Record<string, unknown>): UpdateWo
 
   if (body.end_date !== undefined) {
     result.endDate = parseDateOnly(body.end_date, 'end_date');
+  }
+
+  if (body.next_maintenance_date !== undefined) {
+    result.nextMaintenanceDate = parseDateOnly(body.next_maintenance_date, 'next_maintenance_date');
   }
 
   return result;

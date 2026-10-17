@@ -25,9 +25,10 @@ model WorkItem {
   description   String?      @db.Text
   status        String       @default("pending") @db.VarChar(20)
   referenceDate DateTime     @default(dbgenerated("CURRENT_DATE")) @map("reference_date") @db.Date
-  startDate     DateTime?    @map("start_date") @db.Date
-  endDate       DateTime?    @map("end_date") @db.Date
-  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  startDate           DateTime?    @map("start_date") @db.Date
+  endDate             DateTime?    @map("end_date") @db.Date
+  nextMaintenanceDate DateTime?    @map("next_maintenance_date") @db.Date
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   user          User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   mediaAssets   MediaAsset[]

@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Loader2, Briefcase, Calendar, FileText, AlertTriangle } from 'lucide-react';
+import { Loader2, Briefcase, Calendar, FileText, AlertTriangle, Wrench } from 'lucide-react';
 
 interface WorkFormModalProps {
   isOpen: boolean;
@@ -43,6 +43,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
   const [referenceDate, setReferenceDate] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [nextMaintenanceDate, setNextMaintenanceDate] = useState('');
   const [dateError, setDateError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,6 +56,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
       setReferenceDate(workToEdit.reference_date);
       setStartDate(workToEdit.start_date || '');
       setEndDate(workToEdit.end_date || '');
+      setNextMaintenanceDate(workToEdit.next_maintenance_date || '');
     } else {
       const today = new Date().toISOString().split('T')[0];
       setTitle('');
@@ -63,6 +65,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
       setReferenceDate(today);
       setStartDate('');
       setEndDate('');
+      setNextMaintenanceDate('');
     }
     setDateError(null);
     setApiError(null);
@@ -98,6 +101,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
       reference_date: referenceDate,
       start_date: startDate ? startDate : null,
       end_date: endDate ? endDate : null,
+      next_maintenance_date: nextMaintenanceDate ? nextMaintenanceDate : null,
     };
 
     try {
@@ -249,6 +253,28 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
                   }}
                   className="bg-card/70 border-border/80"
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3.5 pt-2 border-t border-white/[0.06]">
+              <div className="grid gap-1.5">
+                <Label
+                  htmlFor="work-next-maintenance"
+                  className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"
+                >
+                  <Wrench className="w-3.5 h-3.5 text-[#fdd663]" />
+                  Fecha de Próximo Mantenimiento (Opcional)
+                </Label>
+                <Input
+                  id="work-next-maintenance"
+                  type="date"
+                  value={nextMaintenanceDate}
+                  onChange={(e) => setNextMaintenanceDate(e.target.value)}
+                  className="bg-card/70 border-border/80"
+                />
+                <span className="text-[11px] text-[#9aa0a6]">
+                  Programación sugerida para revisión técnica o servicio preventivo.
+                </span>
               </div>
             </div>
 
