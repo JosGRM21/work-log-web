@@ -128,8 +128,8 @@ class MediaValidationTransform extends Transform {
 
         this.mainSharpInstance = sharp()
           .rotate()
-          .resize({ width: 1920, withoutEnlargement: true })
-          .webp({ quality: 82 });
+          .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 80, effort: 4, smartSubsample: true });
 
         this.thumbSharpInstance = sharp()
           .rotate()
@@ -138,9 +138,7 @@ class MediaValidationTransform extends Transform {
 
         this.mainSharpInstance.on('error', (err: Error) => {
           this.destroy(
-            AppError.badRequest(
-              `Error al procesar la imagen "${this.filename}": ${err.message}`,
-            ),
+            AppError.badRequest(`Error al procesar la imagen "${this.filename}": ${err.message}`),
           );
         });
 

@@ -22,11 +22,13 @@ interface MediaUploaderProps {
 
 interface StagedFile {
   file: File;
+  thumbBlob: Blob | null;
   previewUrl: string | null;
   id: string;
 }
 
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB (RNF-STOR-01)
+const MAX_RAW_IMAGE_SELECTION_BYTES = 25 * 1024 * 1024; // 25 MB en selección inicial de imágenes
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB procesado (RNF-STOR-01)
 const MAX_VIDEO_BYTES = 150 * 1024 * 1024; // 150 MB (RNF-STOR-01)
 const MAX_IMAGES_ALLOWED = 20; // RN-03
 const MAX_VIDEOS_ALLOWED = 4; // RN-03
@@ -49,8 +51,8 @@ async function compressImageIfNeeded(file: File): Promise<File> {
   if (!file.type.toLowerCase().startsWith('image/')) {
     return file;
   }
-  // No comprimir si el archivo ya es ligero (<= 1.5 MB)
-  if (file.size <= 1.5 * 1024 * 1024) {
+  // No comprimir si ya es un WebP ligero (<= 300 KB)
+  if (file.type === 'image/webp' && file.size <= 300 * 1024) {
     return file;
   }
 
@@ -81,9 +83,7 @@ async function compressImageIfNeeded(file: File): Promise<File> {
     }
 
     const ctx = canvas.getContext('2d') as
-      | OffscreenCanvasRenderingContext2D
-      | CanvasRenderingContext2D
-      | null;
+      OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
 
     if (!ctx) {
       bitmap.close();
@@ -105,7 +105,7 @@ async function compressImageIfNeeded(file: File): Promise<File> {
       });
     }
 
-    if (blob && blob.size < file.size) {
+    if (blob && (blob.size < file.size || file.type !== 'image/webp')) {
       const newName = file.name.replace(/\.[^.]+$/, '') + '.webp';
       return new File([blob], newName, { type: 'image/webp' });
     }
@@ -116,8 +116,74 @@ async function compressImageIfNeeded(file: File): Promise<File> {
   return file;
 }
 
+async function extractVideoPosterBlob(file: File): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    const objectUrl = URL.createObjectURL(file);
+    video.src = objectUrl;
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+
+    const cleanup = () => {
+      URL.revokeObjectURL(objectUrl);
+      video.removeAttribute('src');
+      video.load();
+    };
+
+    video.onloadedmetadata = () => {
+      // Buscar el segundo 1.0 (o el 25% si el video dura menos de 2s) para evitar frames negros iniciales
+      video.currentTime = video.duration > 2 ? 1.0 : Math.min(0.5, video.duration / 4);
+    };
+
+    video.onseeked = async () => {
+      try {
+        const targetWidth = 480;
+        const targetHeight = 270;
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          cleanup();
+          return resolve(null);
+        }
+
+        // Center-crop (fit: cover) para no deformar videos verticales
+        const scale = Math.max(targetWidth / video.videoWidth, targetHeight / video.videoHeight);
+        const scaledWidth = video.videoWidth * scale;
+        const scaledHeight = video.videoHeight * scale;
+        const offsetX = (targetWidth - scaledWidth) / 2;
+        const offsetY = (targetHeight - scaledHeight) / 2;
+
+        ctx.drawImage(video, offsetX, offsetY, scaledWidth, scaledHeight);
+        canvas.toBlob(
+          (blob) => {
+            cleanup();
+            resolve(blob);
+          },
+          'image/webp',
+          0.8,
+        );
+      } catch {
+        cleanup();
+        resolve(null);
+      }
+    };
+
+    video.onerror = () => {
+      cleanup();
+      resolve(null);
+    };
+  });
+}
+
 async function generateThumbnailBlob(file: File): Promise<Blob | null> {
-  if (!file.type.toLowerCase().startsWith('image/')) {
+  const type = file.type.toLowerCase();
+  if (type.startsWith('video/')) {
+    return extractVideoPosterBlob(file);
+  }
+  if (!type.startsWith('image/')) {
     return null;
   }
   try {
@@ -136,16 +202,20 @@ async function generateThumbnailBlob(file: File): Promise<Blob | null> {
     }
 
     const ctx = canvas.getContext('2d') as
-      | OffscreenCanvasRenderingContext2D
-      | CanvasRenderingContext2D
-      | null;
+      OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
 
     if (!ctx) {
       bitmap.close();
       return null;
     }
 
-    ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+    // Center-crop proporcional (fit: 'cover') para fotos verticales u horizontales
+    const scale = Math.max(targetWidth / bitmap.width, targetHeight / bitmap.height);
+    const sw = targetWidth / scale;
+    const sh = targetHeight / scale;
+    const sx = (bitmap.width - sw) / 2;
+    const sy = (bitmap.height - sh) / 2;
+    ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
     bitmap.close();
 
     if ('convertToBlob' in canvas) {
@@ -206,6 +276,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
 }) => {
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -224,12 +295,14 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
     };
   }, []);
 
-
   const availableImages = Math.max(0, MAX_IMAGES_ALLOWED - currentImageCount);
   const availableVideos = Math.max(0, MAX_VIDEOS_ALLOWED - currentVideoCount);
 
-  const validateFiles = (newFiles: File[], existingStaged: StagedFile[]): StagedFile[] | null => {
-    const existingFiles = existingStaged.map((s) => s.file);
+  const processAndStageFiles = async (newFiles: File[]) => {
+    if (newFiles.length === 0) return;
+    setErrorMessage(null);
+
+    const existingFiles = stagedFilesRef.current.map((s) => s.file);
     const combinedFiles = [...existingFiles, ...newFiles];
 
     let totalImages = 0;
@@ -244,15 +317,15 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
         setErrorMessage(
           `"${file.name}" no es un archivo permitido. Solo se admiten imágenes (JPG, PNG, WebP) y videos (MP4, WebM).`,
         );
-        return null;
+        return;
       }
 
       if (isImg) {
-        if (file.size > MAX_IMAGE_BYTES) {
+        if (file.size > MAX_RAW_IMAGE_SELECTION_BYTES) {
           setErrorMessage(
-            `"${file.name}" supera el límite máximo de 10 MB para imágenes (RNF-STOR-01).`,
+            `"${file.name}" supera el límite inicial de 25 MB para selección de imágenes.`,
           );
-          return null;
+          return;
         }
         totalImages++;
       } else if (isVid) {
@@ -260,7 +333,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           setErrorMessage(
             `"${file.name}" supera el límite máximo de 150 MB para videos (RNF-STOR-01).`,
           );
-          return null;
+          return;
         }
         totalVideos++;
       }
@@ -270,50 +343,74 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
       setErrorMessage(
         `Excedería el límite de ${MAX_IMAGES_ALLOWED} fotos por trabajo (RN-03). Disponibles: ${availableImages}.`,
       );
-      return null;
+      return;
     }
 
     if (currentVideoCount + totalVideos > MAX_VIDEOS_ALLOWED) {
       setErrorMessage(
         `Excedería el límite de ${MAX_VIDEOS_ALLOWED} videos por trabajo (RN-03). Disponibles: ${availableVideos}.`,
       );
-      return null;
+      return;
     }
 
-    // Convertir nuevos archivos a StagedFile con previews
-    const newStaged: StagedFile[] = newFiles.map((file) => {
-      const isImg = file.type.toLowerCase().startsWith('image/');
-      return {
-        file,
-        previewUrl: isImg ? URL.createObjectURL(file) : null,
-        id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
-      };
-    });
+    setIsProcessingFiles(true);
+    try {
+      const processed: StagedFile[] = [];
+      for (const file of newFiles) {
+        const isImg = file.type.toLowerCase().startsWith('image/');
+        const isVid = file.type.toLowerCase().startsWith('video/');
 
-    return [...existingStaged, ...newStaged];
+        if (isImg) {
+          const compressed = await compressImageIfNeeded(file);
+          if (compressed.size > MAX_IMAGE_BYTES) {
+            setErrorMessage(
+              `"${compressed.name}" supera el límite máximo de 10 MB para imágenes (RNF-STOR-01).`,
+            );
+            setIsProcessingFiles(false);
+            return;
+          }
+          const thumbBlob = await generateThumbnailBlob(compressed);
+          const previewUrl = URL.createObjectURL(compressed);
+          processed.push({
+            file: compressed,
+            thumbBlob,
+            previewUrl,
+            id: `${compressed.name}-${compressed.size}-${Date.now()}-${Math.random()}`,
+          });
+        } else if (isVid) {
+          const posterBlob = await extractVideoPosterBlob(file);
+          const previewUrl = posterBlob ? URL.createObjectURL(posterBlob) : null;
+          processed.push({
+            file,
+            thumbBlob: posterBlob,
+            previewUrl,
+            id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
+          });
+        }
+      }
+
+      setStagedFiles((prev) => [...prev, ...processed]);
+    } catch (err) {
+      setErrorMessage('Error al procesar los archivos seleccionados: ' + (err as Error).message);
+    } finally {
+      setIsProcessingFiles(false);
+    }
   };
 
   const handleFileSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
-    setErrorMessage(null);
-    const updated = validateFiles(files, stagedFiles);
-    if (updated) {
-      setStagedFiles(updated);
-    }
+    void processAndStageFiles(files);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+    if (isProcessingFiles || isUploading) return;
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const files = Array.from(e.dataTransfer.files);
-      setErrorMessage(null);
-      const updated = validateFiles(files, stagedFiles);
-      if (updated) {
-        setStagedFiles(updated);
-      }
+      void processAndStageFiles(files);
     }
   };
 
@@ -338,46 +435,39 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
   };
 
   const handleUploadSubmit = async () => {
-    if (stagedFiles.length === 0) return;
+    if (stagedFiles.length === 0 || isUploading || isProcessingFiles) return;
     setIsUploading(true);
     setUploadProgress(0);
     setErrorMessage(null);
 
     try {
-      // 1. Compresión previa en el cliente para imágenes pesadas
-      const processedFiles = await Promise.all(
-        stagedFiles.map((s) => compressImageIfNeeded(s.file)),
-      );
-
-      // 2. Intentar subida directa vía Presigned URLs (S3/Cloudflare R2)
+      // 1. Intentar subida directa vía Presigned URLs (S3/Cloudflare R2)
       let directUploadDone = false;
       try {
-        const presignRes = await apiClient.post<PresignResponse>(
-          `/works/${workId}/media/presign`,
-          {
-            files: processedFiles.map((file) => ({
-              filename: file.name,
-              mimeType: file.type,
-              sizeBytes: file.size,
-            })),
-          },
-        );
+        const presignRes = await apiClient.post<PresignResponse>(`/works/${workId}/media/presign`, {
+          files: stagedFiles.map((s) => ({
+            filename: s.file.name,
+            mimeType: s.file.type,
+            sizeBytes: s.file.size,
+            thumbSizeBytes: s.thumbBlob ? s.thumbBlob.size : undefined,
+          })),
+        });
 
         if (
           presignRes?.directUpload &&
           Array.isArray(presignRes.uploads) &&
-          presignRes.uploads.length === processedFiles.length
+          presignRes.uploads.length === stagedFiles.length
         ) {
-          const totalFiles = processedFiles.length;
+          const totalFiles = stagedFiles.length;
           const progressMap = new Array<number>(totalFiles).fill(0);
 
           await Promise.all(
-            processedFiles.map(async (file, idx) => {
+            stagedFiles.map(async (staged, idx) => {
               const uploadInfo = presignRes.uploads![idx];
               const uploads: Promise<void>[] = [
                 uploadToPresignedUrl(
                   uploadInfo.uploadUrl,
-                  file,
+                  staged.file,
                   uploadInfo.mimeType,
                   (percent) => {
                     progressMap[idx] = percent;
@@ -392,7 +482,8 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
               if (uploadInfo.thumbUploadUrl) {
                 uploads.push(
                   (async () => {
-                    const thumbBlob = await generateThumbnailBlob(file);
+                    const thumbBlob =
+                      staged.thumbBlob || (await generateThumbnailBlob(staged.file));
                     if (thumbBlob) {
                       await uploadToPresignedUrl(
                         uploadInfo.thumbUploadUrl!,
@@ -425,11 +516,11 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
         directUploadDone = false;
       }
 
-      // 3. Fallback a subida multipart tradicional (Local storage)
+      // 2. Fallback a subida multipart tradicional (Local storage)
       if (!directUploadDone) {
         const formData = new FormData();
-        processedFiles.forEach((file) => {
-          formData.append('files', file);
+        stagedFiles.forEach((s) => {
+          formData.append('files', s.file);
         });
         await apiClient.upload(`/works/${workId}/media`, formData);
       }
@@ -464,9 +555,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           </span>
           <span className="font-semibold text-white">
             {currentImageCount} / {MAX_IMAGES_ALLOWED}
-            <span className="text-[10px] text-[#9aa0a6] ml-1">
-              ({availableImages} disp.)
-            </span>
+            <span className="text-[10px] text-[#9aa0a6] ml-1">({availableImages} disp.)</span>
           </span>
         </div>
 
@@ -477,9 +566,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           </span>
           <span className="font-semibold text-white">
             {currentVideoCount} / {MAX_VIDEOS_ALLOWED}
-            <span className="text-[10px] text-[#9aa0a6] ml-1">
-              ({availableVideos} disp.)
-            </span>
+            <span className="text-[10px] text-[#9aa0a6] ml-1">({availableVideos} disp.)</span>
           </span>
         </div>
       </div>
@@ -488,13 +575,18 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
       <div
         onDragOver={(e) => {
           e.preventDefault();
-          setIsDragOver(true);
+          if (!isProcessingFiles && !isUploading) setIsDragOver(true);
         }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => {
+          if (!isProcessingFiles && !isUploading) {
+            fileInputRef.current?.click();
+          }
+        }}
         className={cn(
           'relative flex flex-col items-center justify-center p-6 rounded-2xl cursor-pointer text-center transition-all duration-200 border-2 border-dashed group select-none',
+          isProcessingFiles || isUploading ? 'opacity-60 pointer-events-none' : '',
           isDragOver
             ? 'border-[#4285F4] bg-[#1a73e8]/10 shadow-[0_0_25px_rgba(66,133,244,0.2)]'
             : 'border-white/15 bg-white/[0.02] hover:border-[#4285F4]/50 hover:bg-white/[0.04]',
@@ -512,11 +604,12 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
         </div>
 
         <p className="text-xs sm:text-sm font-medium text-white group-hover:text-[#8ab4f8] transition-colors">
-          Arrastra fotos o videos aquí, o <span className="text-[#4285F4] underline underline-offset-2">selecciónalos</span>
+          Arrastra fotos o videos aquí, o{' '}
+          <span className="text-[#4285F4] underline underline-offset-2">selecciónalos</span>
         </p>
 
         <p className="text-[11px] text-[#9aa0a6] mt-1 max-w-xs leading-normal">
-          JPG, PNG, WebP (hasta 10 MB) · MP4, WebM (hasta 150 MB)
+          JPG, PNG, WebP (hasta 25 MB en selección, máx 10 MB optimizado) · MP4, WebM (hasta 150 MB)
         </p>
 
         <input
@@ -525,9 +618,18 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           multiple
           accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
           className="hidden"
+          disabled={isProcessingFiles || isUploading}
           onChange={handleFileSelection}
         />
       </div>
+
+      {/* Indicador de Procesamiento y Compresión en Cliente */}
+      {isProcessingFiles && (
+        <div className="p-3 rounded-xl bg-[#1a73e8]/10 border border-[#1a73e8]/30 text-[#8ab4f8] text-xs font-medium flex items-center gap-2 animate-in fade-in-0">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0 text-[#4285F4]" />
+          <span>Optimizando imágenes y extrayendo miniaturas de video...</span>
+        </div>
+      )}
 
       {/* Mensaje de Error */}
       {errorMessage && (
@@ -543,7 +645,8 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           <div className="flex items-center justify-between text-xs pb-1.5 border-b border-white/[0.08]">
             <span className="font-semibold text-white flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-[#81c995]" />
-              {stagedFiles.length} {stagedFiles.length === 1 ? 'archivo listo' : 'archivos listos'} ({totalMB} MB)
+              {stagedFiles.length} {stagedFiles.length === 1 ? 'archivo listo' : 'archivos listos'}{' '}
+              ({totalMB} MB)
             </span>
             <span className="text-[11px] text-[#9aa0a6]">
               {stagedImagesCount > 0 && `${stagedImagesCount} fotos `}
@@ -562,13 +665,20 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
                   className="flex items-center justify-between gap-2 p-2 rounded-xl bg-black/40 border border-white/[0.06] hover:border-white/20 transition-all text-xs"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-lg overflow-hidden bg-white/5 border border-white/10 shrink-0 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-lg overflow-hidden bg-white/5 border border-white/10 shrink-0 flex items-center justify-center relative">
                       {item.previewUrl ? (
-                        <img
-                          src={item.previewUrl}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
+                        <>
+                          <img
+                            src={item.previewUrl}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                          {!isImg && (
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <VideoIcon className="w-3.5 h-3.5 text-cyan-400" />
+                            </div>
+                          )}
+                        </>
                       ) : isImg ? (
                         <ImageIcon className="w-4 h-4 text-[#8ab4f8]" />
                       ) : (
@@ -591,7 +701,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
                     onClick={() => handleRemoveStagedFile(item.id)}
                     className="p-1 rounded-lg text-[#9aa0a6] hover:text-destructive hover:bg-white/10 transition-colors"
                     title="Remover archivo de la cola"
-                    disabled={isUploading}
+                    disabled={isUploading || isProcessingFiles}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -606,7 +716,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
               variant="outline"
               size="sm"
               onClick={handleClearAll}
-              disabled={isUploading}
+              disabled={isUploading || isProcessingFiles}
               className="h-8 text-xs font-medium rounded-full border-white/10 text-[#9aa0a6] hover:text-white hover:bg-white/10"
             >
               Descartar Todo
@@ -616,7 +726,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
               type="button"
               size="sm"
               onClick={handleUploadSubmit}
-              disabled={isUploading}
+              disabled={isUploading || isProcessingFiles}
               className="h-8 text-xs font-medium rounded-full bg-[#1a73e8] hover:bg-[#1557b0] text-white shadow-[0_0_15px_rgba(26,115,232,0.35)] gap-1.5 px-4"
             >
               {isUploading ? (
@@ -625,6 +735,11 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
                   {uploadProgress !== null && uploadProgress > 0
                     ? `Subiendo ${uploadProgress}%...`
                     : 'Subiendo...'}
+                </>
+              ) : isProcessingFiles ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Optimizando...
                 </>
               ) : (
                 <>

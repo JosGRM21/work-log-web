@@ -84,12 +84,23 @@ const WorkTimelineItemComponent: React.FC<WorkTimelineItemProps> = ({
             {hasMedia ? (
               isVideo ? (
                 <div className="relative w-full h-full flex items-center justify-center bg-black">
-                  <video
-                    src={work.media_preview!.url}
-                    poster={work.media_preview?.thumbnail_url}
-                    className="w-full h-full object-cover opacity-80"
-                    preload="none"
-                  />
+                  {work.media_preview?.thumbnail_url ? (
+                    <img
+                      src={work.media_preview.thumbnail_url}
+                      alt={work.title}
+                      loading={priority ? 'eager' : 'lazy'}
+                      fetchPriority={priority ? 'high' : 'auto'}
+                      decoding="async"
+                      className="w-full h-full object-cover opacity-80"
+                    />
+                  ) : (
+                    <video
+                      src={work.media_preview!.url}
+                      poster={work.media_preview?.thumbnail_url}
+                      className="w-full h-full object-cover opacity-80"
+                      preload="none"
+                    />
+                  )}
                   <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                     <div className="w-7 h-7 rounded-full bg-black/60 border border-white/20 flex items-center justify-center text-white">
                       <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
@@ -148,8 +159,7 @@ const WorkTimelineItemComponent: React.FC<WorkTimelineItemProps> = ({
               {work.media_count.videos > 0 && (
                 <span className="flex items-center gap-1">
                   <VideoIcon className="w-3.5 h-3.5 text-[#c58af9]" />
-                  {work.media_count.videos}{' '}
-                  {work.media_count.videos === 1 ? 'video' : 'videos'}
+                  {work.media_count.videos} {work.media_count.videos === 1 ? 'video' : 'videos'}
                 </span>
               )}
               {work.media_count.images === 0 && work.media_count.videos === 0 && (

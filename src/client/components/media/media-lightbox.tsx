@@ -229,15 +229,24 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
                 >
                   {item.type === 'image' ? (
                     <img
-                      src={item.url}
+                      src={item.thumbnail_url || item.url}
                       alt=""
                       loading="lazy"
                       decoding="async"
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-[#0c1424] to-[#04060c] flex items-center justify-center relative">
-                      <div className="w-5 h-5 rounded-full bg-[#1a73e8]/80 flex items-center justify-center">
+                    <div className="w-full h-full bg-gradient-to-br from-[#0c1424] to-[#04060c] flex items-center justify-center relative overflow-hidden">
+                      {item.thumbnail_url && (
+                        <img
+                          src={item.thumbnail_url}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          className="absolute inset-0 w-full h-full object-cover opacity-80"
+                        />
+                      )}
+                      <div className="w-5 h-5 rounded-full bg-[#1a73e8]/80 flex items-center justify-center relative z-10 shadow-md">
                         <Play className="w-2.5 h-2.5 text-white fill-current ml-0.5" />
                       </div>
                     </div>

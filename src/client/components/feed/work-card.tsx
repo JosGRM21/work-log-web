@@ -67,12 +67,23 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onSelect, priority =
         {hasMedia ? (
           isVideo ? (
             <div className="relative w-full h-full flex items-center justify-center bg-black">
-              <video
-                src={work.media_preview!.url}
-                poster={work.media_preview?.thumbnail_url}
-                className="w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition-[transform,opacity] duration-700 ease-out"
-                preload="none"
-              />
+              {work.media_preview?.thumbnail_url ? (
+                <img
+                  src={work.media_preview.thumbnail_url}
+                  alt={work.title}
+                  loading={priority ? 'eager' : 'lazy'}
+                  fetchPriority={priority ? 'high' : 'auto'}
+                  decoding="async"
+                  className="w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition-[transform,opacity] duration-700 ease-out"
+                />
+              ) : (
+                <video
+                  src={work.media_preview!.url}
+                  poster={work.media_preview?.thumbnail_url}
+                  className="w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition-[transform,opacity] duration-700 ease-out"
+                  preload="none"
+                />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-[#060a12]/90 via-black/20 to-black/30" />
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="w-12 h-12 rounded-full bg-black/55 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shadow-lg group-hover:bg-[#1a73e8] group-hover:border-[#4285F4] group-hover:scale-110 transition-[transform,background-color,border-color] duration-300">
@@ -123,7 +134,9 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onSelect, priority =
               {status.ping && (
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75" />
               )}
-              <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${status.dotClass}`} />
+              <span
+                className={`relative inline-flex rounded-full h-1.5 w-1.5 ${status.dotClass}`}
+              />
             </span>
             <span>{status.label}</span>
           </div>

@@ -36,10 +36,8 @@ export async function purgeOrphanFiles(): Promise<{
       const canonicalKey = storage.normalizeKey(asset.filePath);
       registeredKeys.add(canonicalKey);
 
-      if (asset.mediaType === 'image') {
-        const thumbKey = canonicalKey.replace(/\.[^.]+$/, '-thumb.webp');
-        registeredKeys.add(thumbKey);
-      }
+      const thumbKey = canonicalKey.replace(/\.[^.]+$/, '-thumb.webp');
+      registeredKeys.add(thumbKey);
     }
 
     if (dbAssets.length < BATCH_SIZE) {

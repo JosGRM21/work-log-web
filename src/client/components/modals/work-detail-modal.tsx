@@ -138,9 +138,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
     const selectedThumb = thumbnailRefs.current[selectedMediaIndex];
     if (container && selectedThumb) {
       const targetScroll =
-        selectedThumb.offsetLeft -
-        container.clientWidth / 2 +
-        selectedThumb.clientWidth / 2;
+        selectedThumb.offsetLeft - container.clientWidth / 2 + selectedThumb.clientWidth / 2;
       container.scrollTo({
         left: Math.max(0, targetScroll),
         behavior: 'smooth',
@@ -660,11 +658,20 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                   className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
                                 />
                               ) : (
-                                <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-[#0c1424] to-[#04060c]">
-                                  <div className="w-6 h-6 rounded-sm bg-[#1a73e8] text-white flex items-center justify-center shadow-md">
+                                <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-[#0c1424] to-[#04060c] overflow-hidden">
+                                  {item.thumbnail_url && (
+                                    <img
+                                      src={item.thumbnail_url}
+                                      alt=""
+                                      loading="lazy"
+                                      decoding="async"
+                                      className="absolute inset-0 w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300 opacity-80"
+                                    />
+                                  )}
+                                  <div className="w-6 h-6 rounded-sm bg-[#1a73e8] text-white flex items-center justify-center shadow-md relative z-10">
                                     <Play className="w-3 h-3 fill-current ml-0.5" />
                                   </div>
-                                  <span className="absolute bottom-1 right-1 text-[8px] font-bold text-cyan-300 bg-black/80 px-1 rounded-none">
+                                  <span className="absolute bottom-1 right-1 text-[8px] font-bold text-cyan-300 bg-black/80 px-1 rounded-none z-10">
                                     VIDEO
                                   </span>
                                 </div>
@@ -762,7 +769,9 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                             </div>
 
                             <div className="p-2.5 rounded-lg border border-white/[0.06] bg-[#070b13]/90 flex flex-col justify-between gap-1">
-                              <span className="text-[11px] text-[#9aa0a6]">Fecha de Finalización</span>
+                              <span className="text-[11px] text-[#9aa0a6]">
+                                Fecha de Finalización
+                              </span>
                               <span className="text-sm font-semibold text-[#81c995] tracking-tight">
                                 {work.end_date ? formatWorkDate(work.end_date) : 'En progreso'}
                               </span>
@@ -770,7 +779,9 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
 
                             {duration && (
                               <div className="p-2.5 rounded-lg border border-white/[0.06] bg-[#070b13]/90 flex flex-col justify-between gap-1">
-                                <span className="text-[11px] text-[#9aa0a6]">Duración del Trabajo</span>
+                                <span className="text-[11px] text-[#9aa0a6]">
+                                  Duración del Trabajo
+                                </span>
                                 <span className="text-sm font-semibold text-white tracking-tight">
                                   {duration}
                                 </span>

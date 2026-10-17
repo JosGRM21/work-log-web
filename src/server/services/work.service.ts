@@ -11,11 +11,7 @@ import {
   validateDateCoherence,
 } from '../validators/work.validator.js';
 import type { AllowedMediaType, WorkStatus } from '../../shared/types.js';
-import {
-  getCachedMetrics,
-  setCachedMetrics,
-  invalidateMetricsCache,
-} from './metrics-cache.js';
+import { getCachedMetrics, setCachedMetrics, invalidateMetricsCache } from './metrics-cache.js';
 
 export class WorkService {
   constructor(
@@ -126,13 +122,12 @@ export class WorkService {
 
     const formattedData = items.map((item) => {
       const firstMedia = item.mediaAssets[0];
-      const isImage = firstMedia?.mediaType === 'image';
       const mediaPreview = firstMedia
         ? {
             url: this.storageDriver.getUrl(firstMedia.filePath),
-            thumbnail_url: isImage
-              ? this.storageDriver.getUrl(firstMedia.filePath.replace(/\.[^.]+$/, '-thumb.webp'))
-              : undefined,
+            thumbnail_url: this.storageDriver.getUrl(
+              firstMedia.filePath.replace(/\.[^.]+$/, '-thumb.webp'),
+            ),
             type: firstMedia.mediaType as AllowedMediaType,
           }
         : null;
@@ -194,13 +189,12 @@ export class WorkService {
       created_at: item.createdAt.toISOString(),
       updated_at: item.updatedAt.toISOString(),
       media: item.mediaAssets.map((asset) => {
-        const isImage = asset.mediaType === 'image';
         return {
           id: asset.id,
           url: this.storageDriver.getUrl(asset.filePath),
-          thumbnail_url: isImage
-            ? this.storageDriver.getUrl(asset.filePath.replace(/\.[^.]+$/, '-thumb.webp'))
-            : undefined,
+          thumbnail_url: this.storageDriver.getUrl(
+            asset.filePath.replace(/\.[^.]+$/, '-thumb.webp'),
+          ),
           type: asset.mediaType as AllowedMediaType,
           size_bytes: Number(asset.fileSizeBytes),
           sort_order: asset.sortOrder,
@@ -321,9 +315,7 @@ export class WorkService {
     const keysToPurge: string[] = [];
     for (const asset of existing.mediaAssets) {
       keysToPurge.push(asset.filePath);
-      if (asset.mediaType === 'image') {
-        keysToPurge.push(asset.filePath.replace(/\.[^.]+$/, '-thumb.webp'));
-      }
+      keysToPurge.push(asset.filePath.replace(/\.[^.]+$/, '-thumb.webp'));
     }
 
     await this.db.workItem.delete({

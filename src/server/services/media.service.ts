@@ -22,6 +22,7 @@ export interface PresignFileInput {
   filename: string;
   mimeType: string;
   sizeBytes: number;
+  thumbSizeBytes?: number;
 }
 
 export interface ConfirmFileInput {
@@ -135,13 +136,12 @@ export class MediaService {
 
       return {
         uploaded: createdAssets.map((asset) => {
-          const isImage = asset.mediaType === 'image';
-          const thumbKey = isImage ? asset.filePath.replace(/\.[^.]+$/, '-thumb.webp') : undefined;
+          const thumbKey = asset.filePath.replace(/\.[^.]+$/, '-thumb.webp');
           return {
             id: asset.id,
             work_id: asset.workItemId,
             url: this.storageDriver.getUrl(asset.filePath),
-            thumbnail_url: thumbKey ? this.storageDriver.getUrl(thumbKey) : undefined,
+            thumbnail_url: this.storageDriver.getUrl(thumbKey),
             type: asset.mediaType,
             size_bytes: Number(asset.fileSizeBytes),
             sort_order: asset.sortOrder,
@@ -151,12 +151,11 @@ export class MediaService {
     } catch (error) {
       await Promise.allSettled(
         uploadedFiles.flatMap((file) => {
-          const deletions = [this.storageDriver.deleteObject(file.key)];
-          if (file.mediaType === 'image') {
-            const thumbKey = file.key.replace(/\.[^.]+$/, '-thumb.webp');
-            deletions.push(this.storageDriver.deleteObject(thumbKey));
-          }
-          return deletions;
+          const thumbKey = file.key.replace(/\.[^.]+$/, '-thumb.webp');
+          return [
+            this.storageDriver.deleteObject(file.key),
+            this.storageDriver.deleteObject(thumbKey).catch(() => {}),
+          ];
         }),
       );
       throw error;
@@ -230,6 +229,7 @@ export class MediaService {
         mimeType: file.mimeType,
         mediaType,
         sizeBytes: file.sizeBytes,
+        thumbSizeBytes: file.thumbSizeBytes,
         extension: ext,
       };
     });
@@ -246,18 +246,14 @@ export class MediaService {
         maxSizeBytes: input.sizeBytes,
       });
 
-      let thumbKey: string | undefined = undefined;
-      let thumbUploadUrl: string | undefined = undefined;
-
-      if (input.mediaType === 'image') {
-        thumbKey = `works/${workId}/${uuid}-thumb.webp`;
-        const presignedThumb = await this.storageDriver.createPresignedUploadUrl({
-          key: thumbKey,
-          mimeType: 'image/webp',
-          maxSizeBytes: 2 * 1024 * 1024,
-        });
-        thumbUploadUrl = presignedThumb.uploadUrl;
-      }
+      // Generar URL prefirmada para miniatura WebP (tanto para imágenes como para videos)
+      const thumbKey = `works/${workId}/${uuid}-thumb.webp`;
+      const presignedThumb = await this.storageDriver.createPresignedUploadUrl({
+        key: thumbKey,
+        mimeType: 'image/webp',
+        maxSizeBytes: input.thumbSizeBytes || 2 * 1024 * 1024,
+      });
+      const thumbUploadUrl = presignedThumb.uploadUrl;
 
       uploads.push({
         key: presigned.key,
@@ -351,13 +347,12 @@ export class MediaService {
 
     return {
       uploaded: createdAssets.map((asset) => {
-        const isImage = asset.mediaType === 'image';
-        const thumbKey = isImage ? asset.filePath.replace(/\.[^.]+$/, '-thumb.webp') : undefined;
+        const thumbKey = asset.filePath.replace(/\.[^.]+$/, '-thumb.webp');
         return {
           id: asset.id,
           work_id: asset.workItemId,
           url: this.storageDriver.getUrl(asset.filePath),
-          thumbnail_url: thumbKey ? this.storageDriver.getUrl(thumbKey) : undefined,
+          thumbnail_url: this.storageDriver.getUrl(thumbKey),
           type: asset.mediaType,
           size_bytes: Number(asset.fileSizeBytes),
           sort_order: asset.sortOrder,
@@ -392,10 +387,8 @@ export class MediaService {
 
     try {
       await this.storageDriver.deleteObject(asset.filePath);
-      if (asset.mediaType === 'image') {
-        const thumbKey = asset.filePath.replace(/\.[^.]+$/, '-thumb.webp');
-        await this.storageDriver.deleteObject(thumbKey).catch(() => {});
-      }
+      const thumbKey = asset.filePath.replace(/\.[^.]+$/, '-thumb.webp');
+      await this.storageDriver.deleteObject(thumbKey).catch(() => {});
     } catch (error) {
       console.warn(`Advertencia al purgar archivo físico en storage: ${asset.filePath}`, error);
     }
