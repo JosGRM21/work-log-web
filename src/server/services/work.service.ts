@@ -11,6 +11,11 @@ import {
   validateDateCoherence,
 } from '../validators/work.validator.js';
 import type { AllowedMediaType, WorkStatus } from '../../shared/types.js';
+import {
+  getCachedMetrics,
+  setCachedMetrics,
+  invalidateMetricsCache,
+} from './metrics-cache.js';
 
 export class WorkService {
   constructor(
@@ -24,35 +29,79 @@ export class WorkService {
       whereClause.status = query.status;
     }
 
-    const [total, items] = await Promise.all([
-      this.db.workItem.count({ where: whereClause }),
-      this.db.workItem.findMany({
-        where: whereClause,
-        orderBy: [
-          {
-            referenceDate: query.order,
-          },
-          {
-            createdAt: query.order,
-          },
-        ],
-        skip: query.offset,
-        take: query.limit,
-        include: {
-          mediaAssets: {
-            select: {
-              filePath: true,
-              mediaType: true,
-              sortOrder: true,
-            },
-            orderBy: {
-              sortOrder: 'asc',
-            },
-            take: 1,
-          },
+    const cached = getCachedMetrics();
+    let statusGroups: Array<{ status: string; _count: { id: number } }>;
+    let totalMedia: number;
+
+    const itemsPromise = this.db.workItem.findMany({
+      where: whereClause,
+      orderBy: [
+        {
+          referenceDate: query.order,
         },
-      }),
-    ]);
+        {
+          createdAt: query.order,
+        },
+      ],
+      skip: query.offset,
+      take: query.limit,
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        referenceDate: true,
+        nextMaintenanceDate: true,
+        createdAt: true,
+        mediaAssets: {
+          select: {
+            filePath: true,
+            mediaType: true,
+            sortOrder: true,
+          },
+          orderBy: {
+            sortOrder: 'asc',
+          },
+          take: 1,
+        },
+      },
+    });
+
+    let items: Awaited<typeof itemsPromise>;
+
+    if (cached) {
+      statusGroups = cached.statusGroups;
+      totalMedia = cached.totalMedia;
+      items = await itemsPromise;
+    } else {
+      const [fetchedItems, fetchedStatusGroups, fetchedTotalMedia] = await Promise.all([
+        itemsPromise,
+        this.db.workItem.groupBy({
+          by: ['status'],
+          _count: { id: true },
+        }),
+        this.db.mediaAsset.count(),
+      ]);
+      items = fetchedItems;
+      statusGroups = fetchedStatusGroups;
+      totalMedia = fetchedTotalMedia;
+      setCachedMetrics(statusGroups, totalMedia);
+    }
+
+    const summary = {
+      completed: 0,
+      in_progress: 0,
+      pending: 0,
+      total_media: totalMedia,
+    };
+    for (const group of statusGroups) {
+      if (group.status === 'completed') summary.completed = group._count.id;
+      else if (group.status === 'in_progress') summary.in_progress = group._count.id;
+      else if (group.status === 'pending') summary.pending = group._count.id;
+    }
+
+    const total = query.status
+      ? (statusGroups.find((g) => g.status === query.status)?._count.id ?? 0)
+      : summary.completed + summary.in_progress + summary.pending;
 
     const workIds = items.map((item) => item.id);
     const countsByWork =
@@ -77,9 +126,13 @@ export class WorkService {
 
     const formattedData = items.map((item) => {
       const firstMedia = item.mediaAssets[0];
+      const isImage = firstMedia?.mediaType === 'image';
       const mediaPreview = firstMedia
         ? {
             url: this.storageDriver.getUrl(firstMedia.filePath),
+            thumbnail_url: isImage
+              ? this.storageDriver.getUrl(firstMedia.filePath.replace(/\.[^.]+$/, '-thumb.webp'))
+              : undefined,
             type: firstMedia.mediaType as AllowedMediaType,
           }
         : null;
@@ -104,6 +157,7 @@ export class WorkService {
         total,
         limit: query.limit,
         offset: query.offset,
+        summary,
       },
     };
   }
@@ -139,14 +193,20 @@ export class WorkService {
       next_maintenance_date: formatDateToIsoDateOnly(item.nextMaintenanceDate),
       created_at: item.createdAt.toISOString(),
       updated_at: item.updatedAt.toISOString(),
-      media: item.mediaAssets.map((asset) => ({
-        id: asset.id,
-        url: this.storageDriver.getUrl(asset.filePath),
-        type: asset.mediaType as AllowedMediaType,
-        size_bytes: Number(asset.fileSizeBytes),
-        sort_order: asset.sortOrder,
-        created_at: asset.createdAt.toISOString(),
-      })),
+      media: item.mediaAssets.map((asset) => {
+        const isImage = asset.mediaType === 'image';
+        return {
+          id: asset.id,
+          url: this.storageDriver.getUrl(asset.filePath),
+          thumbnail_url: isImage
+            ? this.storageDriver.getUrl(asset.filePath.replace(/\.[^.]+$/, '-thumb.webp'))
+            : undefined,
+          type: asset.mediaType as AllowedMediaType,
+          size_bytes: Number(asset.fileSizeBytes),
+          sort_order: asset.sortOrder,
+          created_at: asset.createdAt.toISOString(),
+        };
+      }),
     };
   }
 
@@ -170,6 +230,8 @@ export class WorkService {
         createdAt: true,
       },
     });
+
+    invalidateMetricsCache();
 
     return {
       id: created.id,
@@ -225,6 +287,8 @@ export class WorkService {
       });
     });
 
+    invalidateMetricsCache();
+
     return {
       id: updated.id,
       title: updated.title,
@@ -244,6 +308,7 @@ export class WorkService {
         mediaAssets: {
           select: {
             filePath: true,
+            mediaType: true,
           },
         },
       },
@@ -253,11 +318,19 @@ export class WorkService {
       throw AppError.notFound('El trabajo solicitado no existe.');
     }
 
-    const keysToPurge = existing.mediaAssets.map((asset) => asset.filePath);
+    const keysToPurge: string[] = [];
+    for (const asset of existing.mediaAssets) {
+      keysToPurge.push(asset.filePath);
+      if (asset.mediaType === 'image') {
+        keysToPurge.push(asset.filePath.replace(/\.[^.]+$/, '-thumb.webp'));
+      }
+    }
 
     await this.db.workItem.delete({
       where: { id },
     });
+
+    invalidateMetricsCache();
 
     await Promise.allSettled(
       keysToPurge.map(async (key) => {

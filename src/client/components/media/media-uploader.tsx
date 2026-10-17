@@ -3,7 +3,6 @@ import { apiClient } from '../../api/client.js';
 import { Button } from '@/components/ui/button';
 import {
   UploadCloud,
-  File,
   AlertCircle,
   Loader2,
   X,
@@ -32,6 +31,172 @@ const MAX_VIDEO_BYTES = 150 * 1024 * 1024; // 150 MB (RNF-STOR-01)
 const MAX_IMAGES_ALLOWED = 20; // RN-03
 const MAX_VIDEOS_ALLOWED = 4; // RN-03
 
+interface PresignResponse {
+  directUpload: boolean;
+  uploads?: Array<{
+    key: string;
+    uploadUrl: string;
+    thumbKey?: string;
+    thumbUploadUrl?: string;
+    mimeType: string;
+    mediaType: 'image' | 'video';
+    sizeBytes: number;
+    filename: string;
+  }>;
+}
+
+async function compressImageIfNeeded(file: File): Promise<File> {
+  if (!file.type.toLowerCase().startsWith('image/')) {
+    return file;
+  }
+  // No comprimir si el archivo ya es ligero (<= 1.5 MB)
+  if (file.size <= 1.5 * 1024 * 1024) {
+    return file;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxDimension = 1920;
+    let width = bitmap.width;
+    let height = bitmap.height;
+
+    if (width > maxDimension || height > maxDimension) {
+      if (width > height) {
+        height = Math.round((height * maxDimension) / width);
+        width = maxDimension;
+      } else {
+        width = Math.round((width * maxDimension) / height);
+        height = maxDimension;
+      }
+    }
+
+    const canvas =
+      typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(width, height)
+        : document.createElement('canvas');
+
+    if (canvas instanceof HTMLCanvasElement) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    const ctx = canvas.getContext('2d') as
+      | OffscreenCanvasRenderingContext2D
+      | CanvasRenderingContext2D
+      | null;
+
+    if (!ctx) {
+      bitmap.close();
+      return file;
+    }
+
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    let blob: Blob | null = null;
+    if ('convertToBlob' in canvas) {
+      blob = await (canvas as OffscreenCanvas).convertToBlob({
+        type: 'image/webp',
+        quality: 0.82,
+      });
+    } else if ('toBlob' in canvas) {
+      blob = await new Promise<Blob | null>((resolve) => {
+        (canvas as HTMLCanvasElement).toBlob(resolve, 'image/webp', 0.82);
+      });
+    }
+
+    if (blob && blob.size < file.size) {
+      const newName = file.name.replace(/\.[^.]+$/, '') + '.webp';
+      return new File([blob], newName, { type: 'image/webp' });
+    }
+  } catch {
+    // Si canvas falla en el entorno, retornar el archivo original
+  }
+
+  return file;
+}
+
+async function generateThumbnailBlob(file: File): Promise<Blob | null> {
+  if (!file.type.toLowerCase().startsWith('image/')) {
+    return null;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const targetWidth = 480;
+    const targetHeight = 270;
+
+    const canvas =
+      typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(targetWidth, targetHeight)
+        : document.createElement('canvas');
+
+    if (canvas instanceof HTMLCanvasElement) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    const ctx = canvas.getContext('2d') as
+      | OffscreenCanvasRenderingContext2D
+      | CanvasRenderingContext2D
+      | null;
+
+    if (!ctx) {
+      bitmap.close();
+      return null;
+    }
+
+    ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+    bitmap.close();
+
+    if ('convertToBlob' in canvas) {
+      return await (canvas as OffscreenCanvas).convertToBlob({
+        type: 'image/webp',
+        quality: 0.8,
+      });
+    } else if ('toBlob' in canvas) {
+      return await new Promise<Blob | null>((resolve) => {
+        (canvas as HTMLCanvasElement).toBlob(resolve, 'image/webp', 0.8);
+      });
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function uploadToPresignedUrl(
+  uploadUrl: string,
+  file: File | Blob,
+  mimeType: string,
+  onProgress?: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl, true);
+    xhr.setRequestHeader('Content-Type', mimeType);
+
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          onProgress(percent);
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`Error al subir archivo a S3/R2 (código ${xhr.status})`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Fallo de red durante la subida directa a storage.'));
+    xhr.send(file);
+  });
+}
+
 export const MediaUploader: React.FC<MediaUploaderProps> = ({
   workId,
   currentImageCount,
@@ -41,6 +206,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
 }) => {
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -174,21 +340,107 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
   const handleUploadSubmit = async () => {
     if (stagedFiles.length === 0) return;
     setIsUploading(true);
+    setUploadProgress(0);
     setErrorMessage(null);
 
-    const formData = new FormData();
-    stagedFiles.forEach((staged) => {
-      formData.append('files', staged.file);
-    });
-
     try {
-      await apiClient.upload(`/works/${workId}/media`, formData);
+      // 1. Compresión previa en el cliente para imágenes pesadas
+      const processedFiles = await Promise.all(
+        stagedFiles.map((s) => compressImageIfNeeded(s.file)),
+      );
+
+      // 2. Intentar subida directa vía Presigned URLs (S3/Cloudflare R2)
+      let directUploadDone = false;
+      try {
+        const presignRes = await apiClient.post<PresignResponse>(
+          `/works/${workId}/media/presign`,
+          {
+            files: processedFiles.map((file) => ({
+              filename: file.name,
+              mimeType: file.type,
+              sizeBytes: file.size,
+            })),
+          },
+        );
+
+        if (
+          presignRes?.directUpload &&
+          Array.isArray(presignRes.uploads) &&
+          presignRes.uploads.length === processedFiles.length
+        ) {
+          const totalFiles = processedFiles.length;
+          const progressMap = new Array<number>(totalFiles).fill(0);
+
+          await Promise.all(
+            processedFiles.map(async (file, idx) => {
+              const uploadInfo = presignRes.uploads![idx];
+              const uploads: Promise<void>[] = [
+                uploadToPresignedUrl(
+                  uploadInfo.uploadUrl,
+                  file,
+                  uploadInfo.mimeType,
+                  (percent) => {
+                    progressMap[idx] = percent;
+                    const totalPercent = Math.round(
+                      progressMap.reduce((a, b) => a + b, 0) / totalFiles,
+                    );
+                    setUploadProgress(totalPercent);
+                  },
+                ),
+              ];
+
+              if (uploadInfo.thumbUploadUrl) {
+                uploads.push(
+                  (async () => {
+                    const thumbBlob = await generateThumbnailBlob(file);
+                    if (thumbBlob) {
+                      await uploadToPresignedUrl(
+                        uploadInfo.thumbUploadUrl!,
+                        thumbBlob,
+                        'image/webp',
+                      );
+                    }
+                  })(),
+                );
+              }
+
+              await Promise.all(uploads);
+            }),
+          );
+
+          // Confirmar registros en Prisma
+          await apiClient.post(`/works/${workId}/media/confirm`, {
+            files: presignRes.uploads.map((u) => ({
+              key: u.key,
+              mimeType: u.mimeType,
+              mediaType: u.mediaType,
+              sizeBytes: u.sizeBytes,
+            })),
+          });
+
+          directUploadDone = true;
+        }
+      } catch {
+        // Fallback al endpoint multipart si el storage driver es local o falla el presign
+        directUploadDone = false;
+      }
+
+      // 3. Fallback a subida multipart tradicional (Local storage)
+      if (!directUploadDone) {
+        const formData = new FormData();
+        processedFiles.forEach((file) => {
+          formData.append('files', file);
+        });
+        await apiClient.upload(`/works/${workId}/media`, formData);
+      }
+
       handleClearAll();
       onUploadSuccess();
     } catch (err) {
       setErrorMessage((err as Error).message);
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -370,7 +622,9 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
               {isUploading ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Subiendo...
+                  {uploadProgress !== null && uploadProgress > 0
+                    ? `Subiendo ${uploadProgress}%...`
+                    : 'Subiendo...'}
                 </>
               ) : (
                 <>

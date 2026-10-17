@@ -17,6 +17,28 @@ export class MediaController {
     }
   }
 
+  async presign(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { files } = req.body ?? {};
+      const result = await this.service.presignMedia(String(id), files);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async confirm(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { files } = req.body ?? {};
+      const result = await this.service.confirmMedia(String(id), files);
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;

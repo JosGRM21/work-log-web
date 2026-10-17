@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { workController } from '../controllers/work.controller.js';
 import { mediaController } from '../controllers/media.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
+import { mediaRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
 export const workRouter = Router();
 
@@ -15,6 +16,12 @@ workRouter.patch('/:id', requireAuth, (req, res, next) => workController.update(
 workRouter.delete('/:id', requireAuth, (req, res, next) => workController.delete(req, res, next));
 
 // Endpoint protegido: Carga de fotos y videos asociados a un trabajo (RF-MEDIA-01, RF-MEDIA-02)
-workRouter.post('/:id/media', requireAuth, (req, res, next) =>
+workRouter.post('/:id/media', requireAuth, mediaRateLimiter, (req, res, next) =>
   mediaController.upload(req, res, next),
+);
+workRouter.post('/:id/media/presign', requireAuth, mediaRateLimiter, (req, res, next) =>
+  mediaController.presign(req, res, next),
+);
+workRouter.post('/:id/media/confirm', requireAuth, mediaRateLimiter, (req, res, next) =>
+  mediaController.confirm(req, res, next),
 );

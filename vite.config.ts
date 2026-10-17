@@ -1,9 +1,22 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    ...(process.env.ANALYZE === 'true'
+      ? [
+          visualizer({
+            filename: 'dist/stats.html',
+            open: false,
+            gzipSize: true,
+            brotliSize: true,
+          }),
+        ]
+      : []),
+  ],
   server: {
     port: 5173,
     proxy: {
@@ -32,8 +45,11 @@ export default defineConfig({
           if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
             return 'vendor-react';
           }
-          if (id.includes('node_modules/@base-ui') || id.includes('node_modules/embla-carousel')) {
-            return 'vendor-ui';
+          if (id.includes('node_modules/@base-ui')) {
+            return 'vendor-base-ui';
+          }
+          if (id.includes('node_modules/embla-carousel')) {
+            return 'vendor-carousel';
           }
           if (id.includes('node_modules/lucide-react')) {
             return 'vendor-icons';
@@ -42,6 +58,4 @@ export default defineConfig({
       },
     },
   },
-
 });
-

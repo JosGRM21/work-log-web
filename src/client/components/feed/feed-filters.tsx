@@ -4,6 +4,8 @@ import { ArrowUpDown, LayoutGrid, ListTree } from 'lucide-react';
 
 export type ViewMode = 'grid' | 'timeline';
 
+import { STATUS_CONFIG } from '../../constants/status.js';
+
 interface FeedFiltersProps {
   currentStatus: WorkStatus | 'all';
   onStatusChange: (status: WorkStatus | 'all') => void;
@@ -45,19 +47,19 @@ const FeedFiltersComponent: React.FC<FeedFiltersProps> = ({
       },
       {
         id: 'completed',
-        label: 'Terminados',
+        label: STATUS_CONFIG.completed.label,
         count: counts?.completed,
         dotColor: 'bg-[#34a853]',
       },
       {
         id: 'in_progress',
-        label: 'En curso',
+        label: STATUS_CONFIG.in_progress.label,
         count: counts?.in_progress,
         dotColor: 'bg-[#fbbc04]',
       },
       {
         id: 'pending',
-        label: 'Por realizar',
+        label: STATUS_CONFIG.pending.label,
         count: counts?.pending,
         dotColor: 'bg-[#9aa0a6]',
       },

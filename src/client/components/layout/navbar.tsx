@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../context/auth-context.js';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Plus, LogIn, LogOut, ShieldCheck, Sun, Moon } from 'lucide-react';
+import { Plus, LogIn, LogOut, ShieldCheck } from 'lucide-react';
 
 interface NavbarProps {
   onOpenLogin: () => void;
@@ -11,28 +11,6 @@ interface NavbarProps {
 
 const NavbarComponent: React.FC<NavbarProps> = ({ onOpenLogin, onOpenCreate }) => {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
-  const [isDarkMode, setIsDarkMode] = useState(true);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (!root.classList.contains('dark')) {
-      root.classList.add('dark');
-    }
-    setIsDarkMode(true);
-  }, []);
-
-  const toggleTheme = () => {
-    const root = document.documentElement;
-    if (root.classList.contains('dark')) {
-      root.classList.remove('dark');
-      setIsDarkMode(false);
-      localStorage.setItem('theme', 'light');
-    } else {
-      root.classList.add('dark');
-      setIsDarkMode(true);
-      localStorage.setItem('theme', 'dark');
-    }
-  };
 
   return (
     <header className="bg-black sticky top-0 z-30 transition-colors">
@@ -46,23 +24,6 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onOpenLogin, onOpenCreate }) =
 
         {/* Acciones de Navegación y Sesión */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Selector de Tema */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleTheme}
-            className="h-9 w-9 text-[#9aa0a6] hover:text-white rounded-full hover:bg-white/10"
-            title={isDarkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-            aria-label="Alternar tema visual"
-          >
-            {isDarkMode ? (
-              <Sun className="w-4 h-4 text-amber-300 transition-transform hover:rotate-45" />
-            ) : (
-              <Moon className="w-4 h-4 text-slate-300 transition-transform hover:-rotate-12" />
-            )}
-          </Button>
-
-          <div className="h-5 w-px bg-white/10 hidden sm:block" />
 
           {isLoading ? (
             <span className="text-xs text-[#9aa0a6] animate-pulse px-2">Verificando...</span>

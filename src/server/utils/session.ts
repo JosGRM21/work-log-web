@@ -8,6 +8,7 @@ export const SESSION_EXPIRATION_MS = SESSION_EXPIRATION_DAYS * 24 * 60 * 60 * 10
 export interface SessionPayload {
   userId: string;
   email: string;
+  fullName?: string;
   jti: string;
   exp: number;
 }
@@ -33,11 +34,12 @@ function getSessionSecret(): string {
   return secret;
 }
 
-export function createSessionToken(userId: string, email: string): string {
+export function createSessionToken(userId: string, email: string, fullName?: string): string {
   const secret = getSessionSecret();
   const payload: SessionPayload = {
     userId,
     email,
+    ...(fullName ? { fullName } : {}),
     jti: crypto.randomUUID(),
     exp: Date.now() + SESSION_EXPIRATION_MS,
   };

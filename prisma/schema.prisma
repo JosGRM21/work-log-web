@@ -33,9 +33,10 @@ model WorkItem {
   user          User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   mediaAssets   MediaAsset[]
 
-  @@index([referenceDate(sort: Desc)], map: "idx_work_items_ref_date")
-  @@index([status], map: "idx_work_items_status")
-  @@index([status, referenceDate(sort: Desc)], map: "idx_work_items_status_date")
+  @@index([referenceDate(sort: Desc), createdAt(sort: Desc)], map: "idx_work_items_ref_created")
+  @@index([status, referenceDate(sort: Desc), createdAt(sort: Desc)], map: "idx_work_items_status_ref_created")
+  @@index([userId], map: "idx_work_items_user_id")
+  @@index([nextMaintenanceDate], map: "idx_work_items_next_maint")
   @@map("work_items")
 }
 
@@ -51,5 +52,6 @@ model MediaAsset {
   workItem      WorkItem  @relation(fields: [workItemId], references: [id], onDelete: Cascade)
 
   @@index([workItemId, sortOrder(sort: Asc)], map: "idx_media_assets_work_order")
+  @@index([workItemId, mediaType], map: "idx_media_assets_work_type")
   @@map("media_assets")
 }

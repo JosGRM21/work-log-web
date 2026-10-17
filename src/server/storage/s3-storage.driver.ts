@@ -1,10 +1,18 @@
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  type ListObjectsV2CommandOutput,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Upload } from '@aws-sdk/lib-storage';
 import { PassThrough, Readable } from 'node:stream';
 import type {
   StorageDriver,
   PutObjectOptions,
   PutObjectResult,
+  StorageObjectInfo,
 } from './storage-driver.interface.js';
 
 export interface S3DriverConfig {
@@ -113,5 +121,58 @@ export class S3StorageDriver implements StorageDriver {
       return `${cleanEndpoint}/${this.bucket}/${cleanKey}`;
     }
     return `https://${this.bucket}.s3.amazonaws.com/${cleanKey}`;
+  }
+
+  async listObjects(prefix: string): Promise<StorageObjectInfo[]> {
+    const canonicalPrefix = this.normalizeKey(prefix);
+    const results: StorageObjectInfo[] = [];
+    let continuationToken: string | undefined = undefined;
+
+    do {
+      const response: ListObjectsV2CommandOutput = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: canonicalPrefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+
+      if (response.Contents) {
+        for (const item of response.Contents) {
+          if (item.Key) {
+            results.push({
+              key: item.Key,
+              lastModified: item.LastModified,
+              sizeBytes: item.Size,
+            });
+          }
+        }
+      }
+
+      continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+
+    return results;
+  }
+
+  async createPresignedUploadUrl(options: {
+    key: string;
+    mimeType: string;
+    maxSizeBytes: number;
+  }): Promise<{ uploadUrl: string; key: string }> {
+    const canonicalKey = this.normalizeKey(options.key);
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: canonicalKey,
+      ContentType: options.mimeType,
+      CacheControl: 'public, max-age=31536000, immutable',
+    });
+
+    const uploadUrl = await getSignedUrl(this.client, command, { expiresIn: 900 });
+
+    return {
+      uploadUrl,
+      key: canonicalKey,
+    };
   }
 }

@@ -31,4 +31,10 @@ export class AppError extends Error {
   static payloadTooLarge(message: string, details: unknown[] = []): AppError {
     return new AppError(413, 'PAYLOAD_TOO_LARGE', message, details);
   }
+
+  static tooManyRequests(
+    message = 'Demasiadas solicitudes. Por favor, intente más tarde.',
+  ): AppError {
+    return new AppError(429, 'TOO_MANY_REQUESTS', message);
+  }
 }

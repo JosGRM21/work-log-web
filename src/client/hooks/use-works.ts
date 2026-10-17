@@ -1,6 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../api/client.js';
-import type { WorkItemSummary, WorkItemDetail, WorkListResponse, WorkStatus } from '../../shared/types.js';
+import type {
+  WorkItemSummary,
+  WorkItemDetail,
+  WorkListResponse,
+  WorkStatus,
+  WorkListSummary,
+} from '../../shared/types.js';
 
 export interface UseWorksOptions {
   initialStatus?: WorkStatus | 'all';
@@ -11,6 +17,7 @@ export interface UseWorksOptions {
 interface CachedResponse {
   data: WorkItemSummary[];
   total: number;
+  summary?: WorkListSummary;
   timestamp: number;
 }
 
@@ -39,11 +46,11 @@ export function clearWorksCache(): void {
   detailCache.clear();
 }
 
-
 export function useWorks(options: UseWorksOptions = {}) {
   const limit = options.limit ?? 18;
   const [works, setWorks] = useState<WorkItemSummary[]>([]);
   const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<WorkListSummary | undefined>(undefined);
   const [offset, setOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +58,14 @@ export function useWorks(options: UseWorksOptions = {}) {
     options.initialStatus ?? 'all',
   );
   const [order, setOrderState] = useState<'desc' | 'asc'>(options.initialOrder ?? 'desc');
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   const setStatusFilter = useCallback((nextStatus: WorkStatus | 'all') => {
     setOffset(0);
@@ -72,6 +87,9 @@ export function useWorks(options: UseWorksOptions = {}) {
       if (cached && !bypassCache) {
         setWorks(cached.data);
         setTotal(cached.total);
+        if (cached.summary) {
+          setSummary(cached.summary);
+        }
         setIsLoading(false);
         setError(null);
 
@@ -84,6 +102,12 @@ export function useWorks(options: UseWorksOptions = {}) {
       }
 
       setError(null);
+
+      // Abortar cualquier solicitud previa en curso
+      abortControllerRef.current?.abort();
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       try {
         const params = new URLSearchParams();
         if (statusFilter !== 'all') {
@@ -93,21 +117,34 @@ export function useWorks(options: UseWorksOptions = {}) {
         params.append('limit', String(limit));
         params.append('offset', String(offset));
 
-        const response = await apiClient.get<WorkListResponse>(`/works?${params.toString()}`);
+        const response = await apiClient.get<WorkListResponse>(
+          `/works?${params.toString()}`,
+          { signal: abortController.signal },
+        );
+
         catalogCache.set(cacheKey, {
           data: response.data,
           total: response.meta.total,
+          summary: response.meta.summary,
           timestamp: Date.now(),
         });
         setWorks(response.data);
         setTotal(response.meta.total);
+        if (response.meta.summary) {
+          setSummary(response.meta.summary);
+        }
       } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          return;
+        }
         // Si falló pero teníamos caché previa, no sobreescribir la UI
         if (!cached) {
           setError((err as Error).message || 'No fue posible cargar el catálogo de trabajos.');
         }
       } finally {
-        setIsLoading(false);
+        if (abortControllerRef.current === abortController) {
+          setIsLoading(false);
+        }
       }
     },
     [statusFilter, order, limit, offset],
@@ -130,6 +167,7 @@ export function useWorks(options: UseWorksOptions = {}) {
   return {
     works,
     total,
+    summary,
     limit,
     offset,
     setOffset,

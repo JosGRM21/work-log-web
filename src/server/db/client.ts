@@ -30,11 +30,13 @@ if (rawConnectionString && isSsl) {
 
 const sslCa = process.env.DATABASE_SSL_CA;
 
-const pool = new Pool({
+export const pool = new Pool({
   connectionString,
-  max: Number(process.env.DATABASE_POOL_MAX) || 20,
+  max: Number(process.env.DATABASE_POOL_MAX) || (process.env.NODE_ENV === 'production' ? 10 : 20),
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
+  statement_timeout: 15000,
+  idle_in_transaction_session_timeout: 15000,
   ...(isSsl
     ? {
         ssl: {
@@ -43,6 +45,10 @@ const pool = new Pool({
         },
       }
     : {}),
+});
+
+pool.on('error', (err) => {
+  console.error('[pg-pool] Error inesperado en cliente inactivo de PostgreSQL:', err);
 });
 
 const adapter = new PrismaPg(pool);

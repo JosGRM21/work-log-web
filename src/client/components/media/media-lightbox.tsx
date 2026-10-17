@@ -65,12 +65,13 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
   }, []);
 
   useEffect(() => {
+    if (!isOpen) return;
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -123,7 +124,6 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
             )}
             {currentMedia.type === 'image' ? 'Fotografía' : 'Video Técnico'}
           </Badge>
-
           <span className="text-xs text-[#9aa0a6] font-medium tabular-nums px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
             {currentIndex + 1} de {mediaList.length}
           </span>
@@ -139,7 +139,6 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
           >
             <Download className="w-4 h-4" />
           </Button>
-
           <Button
             variant="ghost"
             size="icon"
@@ -149,7 +148,6 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </Button>
-
           <Button
             variant="ghost"
             size="icon"
@@ -171,7 +169,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
           <button
             type="button"
             onClick={handlePrev}
-            className="absolute left-2 sm:left-6 rounded-full bg-black/60 hover:bg-[#1a73e8] text-white border border-white/15 backdrop-blur-md h-11 w-11 z-20 flex items-center justify-center transition-all duration-200 hover:scale-110 shadow-xl"
+            className="absolute left-2 sm:left-6 rounded-full bg-black/60 hover:bg-[#1a73e8] text-white border border-white/15 backdrop-blur-md h-11 w-11 z-20 flex items-center justify-center transition-[transform,background-color] duration-200 hover:scale-110 shadow-xl"
             aria-label="Evidencia anterior"
           >
             <ChevronLeft className="w-6 h-6 -ml-0.5" />
@@ -183,6 +181,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
             <img
               src={currentMedia.url}
               alt="Evidencia técnica del trabajo"
+              decoding="async"
               className="max-h-[78vh] max-w-full object-contain rounded-2xl shadow-2xl ring-1 ring-white/10"
             />
           ) : (
@@ -199,7 +198,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
           <button
             type="button"
             onClick={handleNext}
-            className="absolute right-2 sm:right-6 rounded-full bg-black/60 hover:bg-[#1a73e8] text-white border border-white/15 backdrop-blur-md h-11 w-11 z-20 flex items-center justify-center transition-all duration-200 hover:scale-110 shadow-xl"
+            className="absolute right-2 sm:right-6 rounded-full bg-black/60 hover:bg-[#1a73e8] text-white border border-white/15 backdrop-blur-md h-11 w-11 z-20 flex items-center justify-center transition-[transform,background-color] duration-200 hover:scale-110 shadow-xl"
             aria-label="Evidencia siguiente"
           >
             <ChevronRight className="w-6 h-6 -mr-0.5" />
@@ -207,7 +206,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
         )}
       </div>
 
-      {/* Dock Inferior de Miniaturas (Estilo Glassmorphism Dock) */}
+      {/* Dock Inferior de Miniaturas */}
       {mediaList.length > 1 && (
         <div
           className="w-full flex items-center justify-center pb-2 z-20 shrink-0"
@@ -222,14 +221,20 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
                   type="button"
                   onClick={() => setCurrentIndex(idx)}
                   className={cn(
-                    'relative w-14 h-10 sm:w-16 sm:h-12 rounded-xl overflow-hidden shrink-0 border-2 transition-all duration-200 bg-black/60',
+                    'relative w-14 h-10 sm:w-16 sm:h-12 rounded-xl overflow-hidden shrink-0 border-2 transition-[transform,opacity,border-color] duration-200 bg-black/60',
                     isSelected
                       ? 'border-[#4285F4] ring-2 ring-[#4285F4]/40 scale-105 shadow-[0_0_12px_rgba(66,133,244,0.4)]'
                       : 'border-transparent opacity-50 hover:opacity-90 hover:border-white/20',
                   )}
                 >
                   {item.type === 'image' ? (
-                    <img src={item.url} alt="" className="w-full h-full object-cover" />
+                    <img
+                      src={item.url}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-[#0c1424] to-[#04060c] flex items-center justify-center relative">
                       <div className="w-5 h-5 rounded-full bg-[#1a73e8]/80 flex items-center justify-center">
@@ -237,7 +242,6 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
                       </div>
                     </div>
                   )}
-
                 </button>
               );
             })}

@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { mkdir, unlink, stat } from 'node:fs/promises';
+import { mkdir, unlink, stat, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -7,6 +7,7 @@ import type {
   StorageDriver,
   PutObjectOptions,
   PutObjectResult,
+  StorageObjectInfo,
 } from './storage-driver.interface.js';
 
 export class LocalDiskStorageDriver implements StorageDriver {
@@ -83,5 +84,42 @@ export class LocalDiskStorageDriver implements StorageDriver {
   getUrl(key: string): string {
     const cleanKey = this.normalizeKey(key);
     return `${this.publicUrlPrefix}/${cleanKey}`;
+  }
+
+  async listObjects(prefix: string): Promise<StorageObjectInfo[]> {
+    const cleanPrefix = this.normalizeKey(prefix);
+    const targetDir = path.resolve(this.uploadDir, cleanPrefix);
+
+    const results: StorageObjectInfo[] = [];
+
+    const scan = async (dir: string, baseUploadDir: string): Promise<void> => {
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          return;
+        }
+        throw err;
+      }
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await scan(fullPath, baseUploadDir);
+        } else if (entry.isFile()) {
+          const stats = await stat(fullPath);
+          const relativeKey = path.relative(baseUploadDir, fullPath).replace(/\\/g, '/');
+          results.push({
+            key: relativeKey,
+            lastModified: stats.mtime,
+            sizeBytes: Number(stats.size),
+          });
+        }
+      }
+    };
+
+    await scan(targetDir, this.uploadDir);
+    return results;
   }
 }

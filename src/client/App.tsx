@@ -1,12 +1,14 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useWorks, invalidateWorkDetailCache } from './hooks/use-works.js';
 import { apiClient } from './api/client.js';
 import type { WorkItemDetail, WorkStatus } from '../shared/types.js';
+
 import { Navbar } from './components/layout/navbar.js';
 import { HeroSection } from './components/feed/hero-section.js';
 import { FeedFilters, type ViewMode } from './components/feed/feed-filters.js';
 import { WorkCard } from './components/feed/work-card.js';
 import { WorkTimelineItem } from './components/feed/work-timeline-item.js';
+
 // Modales cargados dinámicamente mediante code-splitting
 const WorkDetailModal = React.lazy(() =>
   import('./components/modals/work-detail-modal.js').then((m) => ({ default: m.WorkDetailModal })),
@@ -20,6 +22,7 @@ const ConfirmModal = React.lazy(() =>
 const LoginModal = React.lazy(() =>
   import('./components/modals/login-modal.js').then((m) => ({ default: m.LoginModal })),
 );
+
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -36,11 +39,13 @@ import {
 } from '@/components/ui/pagination';
 
 const ITEMS_PER_PAGE = 9;
+const SKELETON_SLOTS = Array.from({ length: ITEMS_PER_PAGE }, (_, i) => i + 1);
 
 export const App: React.FC = () => {
   const {
     works,
     total,
+    summary,
     limit,
     offset,
     setOffset,
@@ -79,42 +84,57 @@ export const App: React.FC = () => {
     () => setOrder(order === 'desc' ? 'asc' : 'desc'),
     [order, setOrder],
   );
-
   const handleStatusChange = useCallback(
     (status: WorkStatus | 'all') => setStatusFilter(status),
     [setStatusFilter],
   );
   const handleViewModeChange = useCallback((mode: ViewMode) => setViewMode(mode), []);
 
-  // Métricas estabilizadas para los KPIs del Hero (no mutan bruscamente al paginar)
-  const [metrics, setMetrics] = useState({
-    total: 0,
-    completed: 0,
-    inProgress: 0,
-    pending: 0,
-    totalMedia: 0,
-  });
-
-  useEffect(() => {
-    if (works.length > 0 && statusFilter === 'all' && offset === 0) {
-      const completed = works.filter((w) => w.status === 'completed').length;
-      const inProgress = works.filter((w) => w.status === 'in_progress').length;
-      const pending = works.filter((w) => w.status === 'pending').length;
-      const totalMedia = works.reduce(
-        (acc, w) => acc + (w.media_count?.images || 0) + (w.media_count?.videos || 0),
-        0,
-      );
-      setMetrics({
-        total: total || works.length,
-        completed,
-        inProgress,
-        pending,
-        totalMedia,
-      });
-    } else if (total > 0) {
-      setMetrics((prev) => (prev.total !== total ? { ...prev, total } : prev));
+  // Métricas globales reales recibidas del backend (meta.summary)
+  const metrics = useMemo(() => {
+    if (summary) {
+      const allCount = summary.completed + summary.in_progress + summary.pending;
+      return {
+        total: allCount > 0 ? allCount : total,
+        completed: summary.completed,
+        inProgress: summary.in_progress,
+        pending: summary.pending,
+        totalMedia: summary.total_media,
+        counts: {
+          all: allCount > 0 ? allCount : total,
+          completed: summary.completed,
+          in_progress: summary.in_progress,
+          pending: summary.pending,
+        },
+      };
     }
-  }, [works, total, statusFilter, offset]);
+
+    let completed = 0;
+    let inProgress = 0;
+    let pending = 0;
+    let totalMedia = 0;
+
+    for (const w of works) {
+      if (w.status === 'completed') completed++;
+      else if (w.status === 'in_progress') inProgress++;
+      else if (w.status === 'pending') pending++;
+      totalMedia += (w.media_count?.images || 0) + (w.media_count?.videos || 0);
+    }
+
+    return {
+      total,
+      completed,
+      inProgress,
+      pending,
+      totalMedia,
+      counts: {
+        all: total,
+        completed,
+        in_progress: inProgress,
+        pending,
+      },
+    };
+  }, [summary, total, works]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const currentPage = Math.floor(offset / limit) + 1;
@@ -145,7 +165,15 @@ export const App: React.FC = () => {
       } else if (currentPage >= totalPages - 2) {
         pages.push(1, 'ellipsis', totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
       } else {
-        pages.push(1, 'ellipsis', currentPage - 1, currentPage, currentPage + 1, 'ellipsis', totalPages);
+        pages.push(
+          1,
+          'ellipsis',
+          currentPage - 1,
+          currentPage,
+          currentPage + 1,
+          'ellipsis',
+          totalPages,
+        );
       }
     }
     return pages;
@@ -178,11 +206,8 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white relative overflow-x-hidden flex flex-col antialiased selection:bg-[#1a73e8]/30 selection:text-blue-100">
-      {/* Barra de Navegación */}
       <Navbar onOpenLogin={handleOpenLogin} onOpenCreate={handleOpenCreate} />
 
-
-      {/* Sección inicial (Hero) */}
       <section className="google-one-hero w-full pt-20 sm:pt-28 pb-10 sm:pb-14 px-4 sm:px-6 flex flex-col items-center">
         <div className="max-w-7xl w-full mx-auto relative z-10">
           <HeroSection
@@ -195,12 +220,10 @@ export const App: React.FC = () => {
         </div>
       </section>
 
-      {/* Contenido Principal (Resto de la página en negro puro #000000 continuo) */}
       <main
         id="catalogo-obras"
         className="bg-black max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 flex-1 flex flex-col gap-8 relative z-10"
       >
-        {/* Barra de Filtros, Ordenamiento y Modos de Vista */}
         <FeedFilters
           currentStatus={statusFilter}
           onStatusChange={handleStatusChange}
@@ -209,35 +232,50 @@ export const App: React.FC = () => {
           totalResults={works.length}
           viewMode={viewMode}
           onViewModeChange={handleViewModeChange}
-          counts={{
-            all: metrics.total,
-            completed: metrics.completed,
-            in_progress: metrics.inProgress,
-            pending: metrics.pending,
-          }}
+          counts={metrics.counts}
         />
 
-        {/* Estado de Carga (Skeletons alineados al nuevo diseño de tarjetas) */}
-        {isLoading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 py-2">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div
-                key={i}
-                className="flex flex-col justify-between rounded-[28px] border border-white/[0.08] p-2.5 bg-gradient-to-b from-[#0b1936]/35 via-[#070b14] to-[#04060b]"
-              >
-                <Skeleton className="w-full aspect-video rounded-[20px] bg-white/[0.04]" />
-                <div className="px-3.5 pt-4 pb-3 space-y-3">
-                  <Skeleton className="h-3.5 w-2/5 rounded-full bg-white/[0.04]" />
-                  <Skeleton className="h-5 w-4/5 rounded-full bg-white/[0.07]" />
-                  <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between">
-                    <Skeleton className="h-3.5 w-28 rounded-full bg-white/[0.04]" />
-                    <Skeleton className="h-8 w-8 rounded-full bg-white/[0.05]" />
+        {/* Estado de Carga adaptado al modo de vista actual (previene CLS) */}
+        {isLoading &&
+          (viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 py-2">
+              {SKELETON_SLOTS.map((i) => (
+                <div
+                  key={i}
+                  className="flex flex-col justify-between rounded-[28px] border border-white/[0.08] p-2.5 bg-gradient-to-b from-[#0b1936]/35 via-[#070b14] to-[#04060b]"
+                >
+                  <Skeleton className="w-full aspect-video rounded-[20px] bg-white/[0.04]" />
+                  <div className="px-3.5 pt-4 pb-3 space-y-3">
+                    <Skeleton className="h-3.5 w-2/5 rounded-full bg-white/[0.04]" />
+                    <Skeleton className="h-5 w-4/5 rounded-full bg-white/[0.07]" />
+                    <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between">
+                      <Skeleton className="h-3.5 w-28 rounded-full bg-white/[0.04]" />
+                      <Skeleton className="h-8 w-8 rounded-full bg-white/[0.05]" />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col py-2 max-w-4xl mx-auto w-full gap-4">
+              {SKELETON_SLOTS.map((i) => (
+                <div
+                  key={i}
+                  className="p-3.5 sm:p-4 rounded-[26px] border border-white/[0.08] bg-gradient-to-b from-[#0b1936]/35 via-[#070b14] to-[#04060b] flex items-center justify-between gap-4"
+                >
+                  <div className="flex items-center gap-4 flex-1">
+                    <Skeleton className="w-24 h-18 sm:w-32 sm:h-20 rounded-[16px] bg-white/[0.04] shrink-0" />
+                    <div className="space-y-2.5 flex-1">
+                      <Skeleton className="h-3.5 w-32 rounded-full bg-white/[0.04]" />
+                      <Skeleton className="h-5 w-3/5 rounded-full bg-white/[0.07]" />
+                      <Skeleton className="h-3.5 w-24 rounded-full bg-white/[0.04]" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-8 w-24 rounded-full bg-white/[0.05] shrink-0" />
+                </div>
+              ))}
+            </div>
+          ))}
 
         {/* Estado de Error */}
         {!isLoading && error && (
@@ -288,8 +326,13 @@ export const App: React.FC = () => {
           <>
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {works.map((work) => (
-                  <WorkCard key={work.id} work={work} onClick={() => handleSelectWork(work.id)} />
+                {works.map((work, index) => (
+                  <WorkCard
+                    key={work.id}
+                    work={work}
+                    onSelect={handleSelectWork}
+                    priority={offset === 0 && index < 3}
+                  />
                 ))}
               </div>
             ) : (
@@ -298,16 +341,16 @@ export const App: React.FC = () => {
                   <WorkTimelineItem
                     key={work.id}
                     work={work}
-                    onClick={() => handleSelectWork(work.id)}
+                    onSelect={handleSelectWork}
                     isLast={index === works.length - 1}
+                    priority={offset === 0 && index < 3}
                   />
                 ))}
               </div>
             )}
 
-            {/* Pie de catálogo: Contador de registros reubicado y Paginación shadcn/ui */}
+            {/* Pie de catálogo */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-white/[0.08] pt-6 mt-4">
-              {/* Nueva ubicación limpia del texto 'Mostrando N registros' */}
               <div className="flex items-center gap-2 text-xs text-[#9aa0a6] select-none">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#4285F4]" />
                 <span>
@@ -320,7 +363,6 @@ export const App: React.FC = () => {
                 </span>
               </div>
 
-              {/* Paginación con componentes shadcn/ui */}
               {totalPages > 1 && (
                 <Pagination className="mx-0 w-auto justify-center sm:justify-end">
                   <PaginationContent>
@@ -363,7 +405,6 @@ export const App: React.FC = () => {
             </div>
           </>
         )}
-
       </main>
 
       {/* Modales del Sistema diferidos mediante code-splitting */}
@@ -413,7 +454,6 @@ export const App: React.FC = () => {
           />
         )}
       </React.Suspense>
-
     </div>
   );
 };

@@ -1,11 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import type { WorkItemDetail, WorkStatus, MediaAssetDTO } from '../../../shared/types.js';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import type { WorkItemDetail, MediaAssetDTO } from '../../../shared/types.js';
 import { apiClient } from '../../api/client.js';
 import { useAuth } from '../../context/auth-context.js';
 import { cn, formatWorkDate } from '@/lib/utils';
-
 import { getCachedWorkDetail, setCachedWorkDetail } from '../../hooks/use-works.js';
-
 import {
   Dialog,
   DialogContent,
@@ -25,7 +23,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import {
@@ -36,10 +33,8 @@ import {
   CarouselNext,
   type CarouselApi,
 } from '@/components/ui/carousel';
-
 import {
   Clock,
-  CheckCircle2,
   Play,
   Pencil,
   Trash2,
@@ -52,16 +47,20 @@ import {
   Video as VideoIcon,
   X,
   Calendar,
-  Hourglass,
   Copy,
   Check,
   Layers,
-  Sparkles,
-  Wrench,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
+import { STATUS_CONFIG } from '../../constants/status.js';
 
-import { MediaLightbox } from '../media/media-lightbox.js';
-import { MediaUploader } from '../media/media-uploader.js';
+const MediaLightbox = React.lazy(() =>
+  import('../media/media-lightbox.js').then((m) => ({ default: m.MediaLightbox })),
+);
+const MediaUploader = React.lazy(() =>
+  import('../media/media-uploader.js').then((m) => ({ default: m.MediaUploader })),
+);
 
 interface WorkDetailModalProps {
   workId: string | null;
@@ -73,34 +72,18 @@ interface WorkDetailModalProps {
   onWorkUpdated: () => void;
 }
 
-const STATUS_CONFIG: Record<
-  WorkStatus,
-  {
-    label: string;
-    pillClass: string;
-    dotClass: string;
-    ping: boolean;
+function calculateDuration(startStr: string | null, endStr: string | null): string | null {
+  if (!startStr) return null;
+  try {
+    const start = new Date(startStr);
+    const end = endStr ? new Date(endStr) : new Date();
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays === 1 ? '1 día' : `${diffDays} días`;
+  } catch {
+    return null;
   }
-> = {
-  pending: {
-    label: 'Por realizar',
-    pillClass: 'bg-black/60 text-[#e8eaed] border-white/15',
-    dotClass: 'bg-[#9aa0a6]',
-    ping: false,
-  },
-  in_progress: {
-    label: 'En curso',
-    pillClass: 'bg-[#081836]/90 text-[#8ab4f8] border-[#4285F4]/35 shadow-[0_0_15px_rgba(66,133,244,0.15)]',
-    dotClass: 'bg-[#4285F4] shadow-[0_0_8px_#4285F4]',
-    ping: true,
-  },
-  completed: {
-    label: 'Terminado',
-    pillClass: 'bg-[#062014]/90 text-[#81c995] border-[#34a853]/35 shadow-[0_0_15px_rgba(52,168,83,0.15)]',
-    dotClass: 'bg-[#34a853] shadow-[0_0_8px_#34a853]',
-    ping: false,
-  },
-};
+}
 
 export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
   workId,
@@ -127,10 +110,12 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
 
   useEffect(() => {
     if (!carouselApi) return;
+
     const handleSelect = () => {
       const snap = carouselApi.selectedScrollSnap();
       setSelectedMediaIndex((prev) => (prev !== snap ? snap : prev));
     };
+
     carouselApi.on('select', handleSelect);
     return () => {
       carouselApi.off('select', handleSelect);
@@ -145,9 +130,51 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
     [carouselApi],
   );
 
+  const thumbnailsContainerRef = useRef<HTMLDivElement>(null);
+  const thumbnailRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  useEffect(() => {
+    const container = thumbnailsContainerRef.current;
+    const selectedThumb = thumbnailRefs.current[selectedMediaIndex];
+    if (container && selectedThumb) {
+      const targetScroll =
+        selectedThumb.offsetLeft -
+        container.clientWidth / 2 +
+        selectedThumb.clientWidth / 2;
+      container.scrollTo({
+        left: Math.max(0, targetScroll),
+        behavior: 'smooth',
+      });
+    }
+  }, [selectedMediaIndex]);
+
+  const handleScrollThumbnails = useCallback((direction: 'left' | 'right') => {
+    if (!thumbnailsContainerRef.current) return;
+    const scrollAmount = 240;
+    thumbnailsContainerRef.current.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth',
+    });
+  }, []);
+
+  const handleThumbnailsWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    if (thumbnailsContainerRef.current && e.deltaY !== 0) {
+      thumbnailsContainerRef.current.scrollLeft += e.deltaY;
+    }
+  }, []);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const loadWork = useCallback(
     async (bypassCache = false) => {
       if (!workId) return;
+
       const cached = getCachedWorkDetail(workId);
       if (cached && !bypassCache) {
         setWork(cached);
@@ -159,20 +186,30 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
         return;
       }
 
+      abortControllerRef.current?.abort();
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       setIsLoading(true);
       setError(null);
       try {
-        const data = await apiClient.get<WorkItemDetail>(`/works/${workId}`);
+        const data = await apiClient.get<WorkItemDetail>(`/works/${workId}`, {
+          signal: abortController.signal,
+        });
         setCachedWorkDetail(workId, data);
-
         setWork(data);
         setSelectedMediaIndex((prev) =>
           data.media.length > 0 ? Math.min(prev, data.media.length - 1) : 0,
         );
       } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          return;
+        }
         setError((err as Error).message);
       } finally {
-        setIsLoading(false);
+        if (abortControllerRef.current === abortController) {
+          setIsLoading(false);
+        }
       }
     },
     [workId],
@@ -183,17 +220,18 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
       void loadWork(refreshKey > 0);
       setActiveTab('dossier');
     } else {
+      abortControllerRef.current?.abort();
       setWork(null);
       setSelectedMediaIndex(0);
+      setLightboxIndex(null);
     }
   }, [isOpen, workId, refreshKey, loadWork]);
-
 
   const handleDeleteMediaConfirm = async (mediaId: string) => {
     setIsDeletingMedia(true);
     try {
       await apiClient.delete(`/media/${mediaId}`);
-      await loadWork();
+      await loadWork(true);
       onWorkUpdated();
       setMediaToDelete(null);
       toast.add({
@@ -212,23 +250,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
     }
   };
 
-  const formatDate = (dateStr: string | null) => formatWorkDate(dateStr);
-
-
-  const calculateDuration = (startStr: string | null, endStr: string | null) => {
-    if (!startStr) return null;
-    try {
-      const start = new Date(startStr);
-      const end = endStr ? new Date(endStr) : new Date();
-      const diffTime = Math.abs(end.getTime() - start.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays === 1 ? '1 día' : `${diffDays} días`;
-    } catch {
-      return null;
-    }
-  };
-
-  const handleCopyText = (text: string) => {
+  const handleCopyText = useCallback((text: string) => {
     void navigator.clipboard.writeText(text);
     setCopiedDesc(true);
     setTimeout(() => setCopiedDesc(false), 2000);
@@ -237,16 +259,28 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
       description: 'Descripción copiada.',
       type: 'info',
     });
-  };
+  }, []);
 
   const mediaList: MediaAssetDTO[] = work?.media || [];
-  const imagesCount = mediaList.filter((m) => m.type === 'image').length;
-  const videosCount = mediaList.filter((m) => m.type === 'video').length;
-  const statusInfo = work
+
+  const { imagesCount, videosCount } = useMemo(() => {
+    let images = 0;
+    let videos = 0;
+    for (const m of mediaList) {
+      if (m.type === 'image') images++;
+      else if (m.type === 'video') videos++;
+    }
+    return { imagesCount: images, videosCount: videos };
+  }, [mediaList]);
+
+  const _statusInfo = work
     ? STATUS_CONFIG[work.status] || STATUS_CONFIG.pending
     : STATUS_CONFIG.pending;
   const activeMedia = mediaList[selectedMediaIndex] || null;
-  const duration = work ? calculateDuration(work.start_date, work.end_date) : null;
+  const duration = useMemo(
+    () => (work ? calculateDuration(work.start_date, work.end_date) : null),
+    [work?.start_date, work?.end_date],
+  );
 
   return (
     <>
@@ -255,20 +289,21 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
           showCloseButton={false}
           className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-[96vw] xl:max-w-6xl w-full h-[92dvh] lg:h-[86vh] max-h-[880px] p-0 gap-0 overflow-hidden rounded-[28px] border border-white/10 bg-[#080c14] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_40px_rgba(26,115,232,0.12)] flex flex-col"
         >
-          {/* Destello decorativo superior estilo Google One */}
           <div
             className="pointer-events-none absolute inset-x-12 top-0 h-px bg-gradient-to-r from-transparent via-[#669df6]/50 to-transparent z-30"
             aria-hidden="true"
           />
 
           {isLoading ? (
-            /* Vista de Carga Estructurada (Skeleton Placeholder) */
             <div className="flex-1 flex flex-col lg:flex-row h-full overflow-hidden p-6 gap-6 animate-pulse">
               <div className="w-full lg:w-[58%] flex flex-col gap-4">
                 <Skeleton className="w-full aspect-video lg:flex-1 rounded-2xl bg-white/[0.04]" />
-                <div className="grid grid-cols-4 gap-2 h-16">
-                  {[1, 2, 3, 4].map((i) => (
-                    <Skeleton key={i} className="rounded-xl bg-white/[0.04]" />
+                <div className="flex gap-2.5 h-16 overflow-hidden">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <Skeleton
+                      key={i}
+                      className="w-20 sm:w-24 md:w-28 shrink-0 aspect-video rounded-xl bg-white/[0.04]"
+                    />
                   ))}
                 </div>
               </div>
@@ -286,7 +321,6 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
               </div>
             </div>
           ) : error || !work ? (
-            /* Estado de Error */
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
               <div className="w-14 h-14 rounded-2xl bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-center shadow-lg">
                 <AlertTriangle className="w-7 h-7" />
@@ -310,30 +344,25 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
               </Button>
             </div>
           ) : (
-            /* Contenido Principal del Modal */
             <div className="flex flex-col h-full min-h-0">
-              {/* Barra Superior Unificada */}
-              <header className="px-5 sm:px-6 py-3.5 border-b border-white/[0.08] flex items-center justify-between gap-3 shrink-0 bg-[#080c14]/90 backdrop-blur-md z-20">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 min-w-0">
-                  <div
-                    className={cn(
-                      'inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-medium border backdrop-blur-md',
-                      statusInfo.pillClass,
-                    )}
-                  >
-                    <span className="relative flex h-1.5 w-1.5">
-                      {statusInfo.ping && (
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75" />
-                      )}
-                      <span className={cn('relative inline-flex rounded-full h-1.5 w-1.5', statusInfo.dotClass)} />
-                    </span>
-                    <span>{statusInfo.label}</span>
-                  </div>
+              {/* Barra Superior Unificada con Título */}
+              <header className="px-5 sm:px-6 py-3 border-b border-white/[0.08] flex items-center justify-between gap-4 shrink-0 bg-[#080c14]/95 backdrop-blur-md z-20">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <DialogHeader className="p-0 m-0 text-left min-w-0 flex-1">
+                    <DialogTitle className="text-base sm:text-lg font-medium tracking-tight text-white leading-snug font-heading truncate">
+                      {work.title}
+                    </DialogTitle>
+                    <DialogDescription className="sr-only">
+                      Expediente técnico de la obra {work.title}.
+                    </DialogDescription>
+                  </DialogHeader>
 
-                  <span className="text-xs text-[#9aa0a6] hidden md:inline-flex items-center gap-1 pl-1">
-                    <Calendar className="w-3.5 h-3.5 text-[#4285F4]" />
-                    {formatDate(work.reference_date)}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-[#9aa0a6] hidden md:inline-flex items-center gap-1.5 pl-1 border-l border-white/[0.08]">
+                      <Calendar className="w-3.5 h-3.5 text-[#4285F4]" />
+                      {formatWorkDate(work.reference_date)}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Acciones de la Barra Superior */}
@@ -347,7 +376,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                           setActiveTab((prev) => (prev === 'upload' ? 'dossier' : 'upload'))
                         }
                         className={cn(
-                          'h-7 px-3 text-xs font-medium rounded-full gap-1.5 transition-all',
+                          'h-7 px-3 text-xs font-medium rounded-full gap-1.5 transition-colors',
                           activeTab === 'upload'
                             ? 'bg-[#1a73e8] text-white hover:bg-[#1557b0]'
                             : 'text-[#9aa0a6] hover:text-white hover:bg-white/10',
@@ -364,7 +393,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                         variant="ghost"
                         size="sm"
                         onClick={() => onEdit(work)}
-                        className="h-7 px-3 text-xs font-medium rounded-full gap-1.5 text-[#9aa0a6] hover:text-white hover:bg-white/10 transition-all"
+                        className="h-7 px-3 text-xs font-medium rounded-full gap-1.5 text-[#9aa0a6] hover:text-white hover:bg-white/10 transition-colors"
                         title="Editar información del trabajo"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -397,18 +426,15 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
               </header>
 
               {/* Cuerpo del Modal: 2 Columnas Responsivas */}
-              <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
-                {/* =========================================================
-                    COLUMNA IZQUIERDA: Visor Multimedia Principal & Filmstrip
-                    ========================================================= */}
+              <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden no-scrollbar">
+                {/* COLUMNA IZQUIERDA: Visor Multimedia Principal & Filmstrip */}
                 <div className="w-full lg:w-[58%] xl:w-[60%] flex flex-col shrink-0 lg:shrink lg:h-full bg-gradient-to-b from-[#060a14] via-[#04060c] to-[#020306] border-b lg:border-b-0 lg:border-r border-white/[0.08] p-4 sm:p-5 gap-3.5 min-h-0">
-                  {/* Visor Escénico Principal */}
                   <div
                     className={cn(
-                      'relative rounded-2xl overflow-hidden group border border-white/[0.08] shadow-2xl flex flex-col',
+                      'relative rounded-2xl overflow-hidden group shadow-2xl flex flex-col',
                       mediaList.length > 0
-                        ? 'bg-black/95 aspect-video sm:h-72 lg:h-auto lg:flex-1 lg:min-h-[320px]'
-                        : 'bg-white/[0.02] h-48 sm:h-60 lg:h-auto lg:flex-1 lg:min-h-[280px]',
+                        ? 'border border-white/[0.08] bg-black/95 aspect-video sm:h-72 lg:h-auto lg:flex-1 lg:min-h-[320px]'
+                        : 'border border-white/[0.14] bg-[#0c1322]/60 h-48 sm:h-60 lg:h-auto lg:flex-1 lg:min-h-[280px]',
                     )}
                   >
                     {mediaList.length > 0 ? (
@@ -421,46 +447,54 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                         className="w-full h-full flex flex-col justify-center relative select-none"
                       >
                         <CarouselContent className="h-full ml-0">
-                          {mediaList.map((item, idx) => (
-                            <CarouselItem
-                              key={item.id}
-                              className="pl-0 h-full flex items-center justify-center relative"
-                            >
-                              {item.type === 'image' ? (
-                                <img
-                                  src={item.url}
-                                  alt={`Evidencia ${idx + 1}`}
-                                  className="w-full h-full max-h-[500px] object-contain cursor-pointer transition-transform duration-300"
-                                  onClick={() => setLightboxIndex(idx)}
-                                />
-                              ) : (
-                                <div
-                                  className="relative w-full h-full max-h-[500px] flex items-center justify-center cursor-pointer group/video"
-                                  onClick={() => setLightboxIndex(idx)}
-                                >
-                                  {idx === selectedMediaIndex ? (
-                                    <video
-                                      src={item.url}
-                                      className="w-full h-full object-contain"
-                                      preload="metadata"
-                                    />
-                                  ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-black/60" />
-                                  )}
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/30 transition-colors">
-                                    <div className="w-14 h-14 rounded-full bg-[#1a73e8] text-white flex items-center justify-center shadow-[0_0_25px_rgba(26,115,232,0.6)] transition-transform group-hover/video:scale-110">
-                                      <Play className="w-6 h-6 fill-current ml-0.5" />
+                          {mediaList.map((item, idx) => {
+                            const isNearActive =
+                              Math.abs(idx - selectedMediaIndex) <= 1 ||
+                              (selectedMediaIndex === 0 && idx === mediaList.length - 1) ||
+                              (selectedMediaIndex === mediaList.length - 1 && idx === 0);
+
+                            return (
+                              <CarouselItem
+                                key={item.id}
+                                className="pl-0 h-full flex items-center justify-center relative"
+                              >
+                                {item.type === 'image' ? (
+                                  <img
+                                    src={item.url}
+                                    alt={`Evidencia ${idx + 1}`}
+                                    loading={isNearActive ? 'eager' : 'lazy'}
+                                    decoding="async"
+                                    className="w-full h-full max-h-[500px] object-contain cursor-pointer transition-transform duration-300"
+                                    onClick={() => setLightboxIndex(idx)}
+                                  />
+                                ) : (
+                                  <div
+                                    className="relative w-full h-full max-h-[500px] flex items-center justify-center cursor-pointer group/video"
+                                    onClick={() => setLightboxIndex(idx)}
+                                  >
+                                    {idx === selectedMediaIndex ? (
+                                      <video
+                                        src={item.url}
+                                        className="w-full h-full object-contain"
+                                        preload="metadata"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center bg-black/60" />
+                                    )}
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/30 transition-colors">
+                                      <div className="w-14 h-14 rounded-full bg-[#1a73e8] text-white flex items-center justify-center shadow-[0_0_25px_rgba(26,115,232,0.6)] transition-transform group-hover/video:scale-110">
+                                        <Play className="w-6 h-6 fill-current ml-0.5" />
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              )}
-                            </CarouselItem>
-                          ))}
+                                )}
+                              </CarouselItem>
+                            );
+                          })}
                         </CarouselContent>
 
                         {activeMedia && (
                           <>
-                            {/* Badges Flotantes de la Media Activa */}
                             <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 pointer-events-none">
                               <Badge className="bg-black/75 backdrop-blur-md text-white border border-white/15 text-[11px] font-semibold px-2.5 py-0.5 rounded-full shadow-lg">
                                 {selectedMediaIndex + 1} / {mediaList.length}
@@ -478,7 +512,6 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                               </Badge>
                             </div>
 
-                            {/* Controles Flotantes Superiores */}
                             <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
                               {isAuthenticated && (
                                 <Button
@@ -508,18 +541,16 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                               </Button>
                             </div>
 
-                            {/* Flechas de Navegación del Carrusel */}
                             {mediaList.length > 1 && (
                               <>
-                                <CarouselPrevious className="left-3 h-9 w-9 rounded-full bg-black/65 hover:bg-[#1a73e8] text-white border border-white/15 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-xl z-10" />
-                                <CarouselNext className="right-3 h-9 w-9 rounded-full bg-black/65 hover:bg-[#1a73e8] text-white border border-white/15 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-xl z-10" />
+                                <CarouselPrevious className="left-3 h-9 w-9 rounded-full bg-black/65 hover:bg-[#1a73e8] text-white border border-white/15 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-xl z-10" />
+                                <CarouselNext className="right-3 h-9 w-9 rounded-full bg-black/65 hover:bg-[#1a73e8] text-white border border-white/15 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-xl z-10" />
                               </>
                             )}
                           </>
                         )}
                       </Carousel>
                     ) : (
-                      /* Estado Vacío Sin Medios */
                       <div className="flex flex-col items-center justify-center text-center p-6 max-w-sm m-auto">
                         <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center text-[#8ab4f8] mb-3 shadow-[0_0_20px_rgba(26,115,232,0.1)]">
                           <Layers className="w-7 h-7 stroke-[1.5]" />
@@ -560,46 +591,84 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                         Evidencias Registradas ({mediaList.length})
                       </span>
                       {mediaList.length > 0 && (
-                        <span className="text-[11px] text-[#9aa0a6] tabular-nums">
-                          {imagesCount} fotos · {videosCount} videos
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-[#9aa0a6] tabular-nums">
+                            {imagesCount} fotos • {videosCount} videos
+                          </span>
+                          {mediaList.length > 3 && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                type="button"
+                                onClick={() => handleScrollThumbnails('left')}
+                                className="h-6 w-6 rounded-full bg-white/[0.04] hover:bg-white/10 text-[#9aa0a6] hover:text-white transition-colors"
+                                title="Desplazar miniaturas hacia la izquierda"
+                              >
+                                <ChevronLeft className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                type="button"
+                                onClick={() => handleScrollThumbnails('right')}
+                                className="h-6 w-6 rounded-full bg-white/[0.04] hover:bg-white/10 text-[#9aa0a6] hover:text-white transition-colors"
+                                title="Desplazar miniaturas hacia la derecha"
+                              >
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
 
                     {mediaList.length > 0 ? (
-                      <div className="flex lg:grid lg:grid-cols-4 gap-2.5 overflow-x-auto lg:overflow-visible p-0.5 scrollbar-thin">
+                      <div
+                        ref={thumbnailsContainerRef}
+                        onWheel={handleThumbnailsWheel}
+                        className="relative flex items-center gap-2.5 overflow-x-auto py-1 px-0.5 no-scrollbar scroll-smooth"
+                      >
                         {mediaList.map((item, index) => {
                           const isSelected = index === selectedMediaIndex;
                           return (
                             <button
                               key={item.id}
+                              ref={(el) => {
+                                thumbnailRefs.current[index] = el;
+                              }}
                               type="button"
                               onClick={() => handleSelectMedia(index)}
                               className={cn(
-                                'relative w-20 sm:w-24 lg:w-auto shrink-0 aspect-video rounded-xl overflow-hidden border-2 transition-all duration-200 focus:outline-none bg-black/60 group/thumb',
+                                'relative w-20 sm:w-24 md:w-28 shrink-0 aspect-video rounded-sm overflow-hidden border-2 transition-[transform,opacity,border-color] duration-200 focus:outline-none bg-black/60 group/thumb',
                                 isSelected
-                                  ? 'border-[#4285F4] ring-2 ring-[#4285F4]/40 scale-[1.03] shadow-[0_0_15px_rgba(66,133,244,0.35)]'
-                                  : 'border-white/[0.08] hover:border-white/30 opacity-70 hover:opacity-100',
+                                  ? 'border-[#4285F4] ring-2 ring-[#4285F4]/60 scale-[1.03] shadow-[0_0_14px_rgba(66,133,244,0.55)] opacity-100 z-10'
+                                  : 'border-white/[0.12] hover:border-white/30 opacity-60 hover:opacity-100',
                               )}
                             >
                               {item.type === 'image' ? (
                                 <img
-                                  src={item.url}
+                                  src={item.thumbnail_url || item.url}
                                   alt=""
                                   loading="lazy"
+                                  decoding="async"
+                                  onError={(e) => {
+                                    if (item.thumbnail_url && e.currentTarget.src !== item.url) {
+                                      e.currentTarget.src = item.url;
+                                    }
+                                  }}
                                   className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
                                 />
                               ) : (
                                 <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-[#0c1424] to-[#04060c]">
-                                  <div className="w-6 h-6 rounded-full bg-[#1a73e8] text-white flex items-center justify-center shadow-md">
+                                  <div className="w-6 h-6 rounded-sm bg-[#1a73e8] text-white flex items-center justify-center shadow-md">
                                     <Play className="w-3 h-3 fill-current ml-0.5" />
                                   </div>
-                                  <span className="absolute bottom-1 right-1 text-[8px] font-bold text-cyan-300 bg-black/80 px-1 rounded">
+                                  <span className="absolute bottom-1 right-1 text-[8px] font-bold text-cyan-300 bg-black/80 px-1 rounded-none">
                                     VIDEO
                                   </span>
                                 </div>
                               )}
-
                               {isSelected && (
                                 <div className="absolute inset-0 bg-[#1a73e8]/15 pointer-events-none" />
                               )}
@@ -607,12 +676,11 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                           );
                         })}
 
-                        {/* Botón Atajo para Subir Más Fotos si es admin y hay espacio */}
                         {isAuthenticated && mediaList.length < 24 && (
                           <button
                             type="button"
                             onClick={() => setActiveTab('upload')}
-                            className="w-20 sm:w-24 lg:w-auto shrink-0 aspect-video rounded-xl border border-dashed border-white/20 hover:border-[#4285F4]/60 bg-white/[0.02] hover:bg-[#1a73e8]/10 flex flex-col items-center justify-center gap-1 text-[#9aa0a6] hover:text-[#8ab4f8] transition-all group/add"
+                            className="w-20 sm:w-24 md:w-28 shrink-0 aspect-video rounded-sm border border-dashed border-white/20 hover:border-[#4285F4]/60 bg-white/[0.02] hover:bg-[#1a73e8]/10 flex flex-col items-center justify-center gap-1 text-[#9aa0a6] hover:text-[#8ab4f8] transition-colors group/add"
                             title="Añadir más fotos o videos"
                           >
                             <UploadCloud className="w-4 h-4 transition-transform group-hover/add:scale-110" />
@@ -625,7 +693,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                         {[1, 2, 3, 4].map((slot) => (
                           <div
                             key={slot}
-                            className="aspect-video rounded-xl border border-dashed border-white/[0.08] bg-white/[0.01] flex items-center justify-center text-white/10"
+                            className="aspect-video rounded-sm border border-dashed border-white/20 bg-[#0c1322]/50 flex items-center justify-center text-white/25 hover:border-white/30 transition-colors"
                           >
                             <ImageIcon className="w-5 h-5 stroke-[1.2]" />
                           </div>
@@ -635,25 +703,11 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                   </div>
                 </div>
 
-                {/* =========================================================
-                    COLUMNA DERECHA: Expediente Técnico & Carga de Medios
-                    ========================================================= */}
+                {/* COLUMNA DERECHA: Expediente Técnico & Carga de Medios */}
                 <div className="w-full lg:w-[42%] xl:w-[40%] flex flex-col flex-1 lg:h-full bg-[#080c14] min-h-0">
-                  {/* Encabezado del Trabajo */}
-                  <DialogHeader className="p-5 pb-3 border-b border-white/[0.08] space-y-2 text-left shrink-0">
-                    <DialogTitle className="text-lg sm:text-xl font-medium tracking-tight text-white leading-snug font-heading">
-                      {work.title}
-                    </DialogTitle>
-                    <DialogDescription className="sr-only">
-                      Expediente técnico de la obra {work.title}.
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  {/* Contenido Scrolleable con ScrollArea */}
-                  <ScrollArea className="flex-1 px-5 py-4 min-h-0">
+                  <div className="flex-1 px-5 py-4 min-h-0 overflow-y-auto no-scrollbar">
                     {activeTab === 'upload' && isAuthenticated ? (
-                      /* Modo: Carga de Archivos Multimedia (Admin) */
-                      <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-3">
+                      <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.08] space-y-3">
                         <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
                           <span className="text-xs font-semibold text-white flex items-center gap-2">
                             <UploadCloud className="w-4 h-4 text-[#4285F4]" />
@@ -668,34 +722,104 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                             Volver al Expediente
                           </Button>
                         </div>
-
-                        <MediaUploader
-                          workId={work.id}
-                          currentImageCount={imagesCount}
-                          currentVideoCount={videosCount}
-                          onUploadSuccess={() => {
-                            void loadWork();
-                            onWorkUpdated();
-                            setActiveTab('dossier');
-                          }}
-                          onCancel={() => setActiveTab('dossier')}
-                        />
+                        <React.Suspense
+                          fallback={
+                            <div className="py-12 flex items-center justify-center text-xs text-[#9aa0a6] gap-2">
+                              <Loader2 className="w-4 h-4 animate-spin text-[#4285F4]" />
+                              Cargando gestor de archivos...
+                            </div>
+                          }
+                        >
+                          <MediaUploader
+                            workId={work.id}
+                            currentImageCount={imagesCount}
+                            currentVideoCount={videosCount}
+                            onUploadSuccess={() => {
+                              void loadWork(true);
+                              onWorkUpdated();
+                              setActiveTab('dossier');
+                            }}
+                            onCancel={() => setActiveTab('dossier')}
+                          />
+                        </React.Suspense>
                       </div>
                     ) : (
-                      /* Expediente Técnico Principal */
                       <div className="space-y-4">
-                        {/* Descripción Técnica y Alcance */}
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6]">
-                            <span className="flex items-center gap-1.5 text-[#4285F4]">
-                              <FileText className="w-3.5 h-3.5" />
-                              Descripción y Especificaciones
+                        <div className="rounded-xl border border-white/[0.08] bg-[#0c121e]/80 p-3.5 sm:p-4 space-y-3 shadow-md">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold tracking-wider text-[#8ab4f8] uppercase flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-[#4285F4]" />
+                              Cronograma y Plazos del Servicio
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div className="p-2.5 rounded-lg border border-white/[0.06] bg-[#070b13]/90 flex flex-col justify-between gap-1">
+                              <span className="text-[11px] text-[#9aa0a6]">Fecha de Inicio</span>
+                              <span className="text-sm font-semibold text-white tracking-tight">
+                                {work.start_date ? formatWorkDate(work.start_date) : 'No definida'}
+                              </span>
+                            </div>
+
+                            <div className="p-2.5 rounded-lg border border-white/[0.06] bg-[#070b13]/90 flex flex-col justify-between gap-1">
+                              <span className="text-[11px] text-[#9aa0a6]">Fecha de Finalización</span>
+                              <span className="text-sm font-semibold text-[#81c995] tracking-tight">
+                                {work.end_date ? formatWorkDate(work.end_date) : 'En progreso'}
+                              </span>
+                            </div>
+
+                            {duration && (
+                              <div className="p-2.5 rounded-lg border border-white/[0.06] bg-[#070b13]/90 flex flex-col justify-between gap-1">
+                                <span className="text-[11px] text-[#9aa0a6]">Duración del Trabajo</span>
+                                <span className="text-sm font-semibold text-white tracking-tight">
+                                  {duration}
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="p-2.5 rounded-lg border border-white/[0.06] bg-[#070b13]/90 flex flex-col justify-between gap-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] text-[#9aa0a6]">
+                                  Fecha de Próximo Mantenimiento
+                                </span>
+                                {isAuthenticated && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onEdit(work)}
+                                    className="p-0.5 rounded text-[#9aa0a6] hover:text-[#8ab4f8] transition-colors"
+                                    title="Editar fecha de mantenimiento"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                              <span
+                                className={cn(
+                                  'text-sm font-semibold tracking-tight',
+                                  work.next_maintenance_date
+                                    ? 'text-[#fdd663]'
+                                    : 'text-neutral-400 font-normal italic',
+                                )}
+                              >
+                                {work.next_maintenance_date
+                                  ? formatWorkDate(work.next_maintenance_date)
+                                  : 'No programada'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-white/[0.08] bg-[#0c121e]/80 p-3.5 sm:p-4 space-y-3 shadow-md">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold tracking-wider text-[#8ab4f8] uppercase flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-[#4285F4]" />
+                              Descripción
                             </span>
                             {work.description && (
                               <button
                                 type="button"
                                 onClick={() => handleCopyText(work.description!)}
-                                className="text-[10px] text-[#9aa0a6] hover:text-white flex items-center gap-1 transition-colors capitalize lowercase"
+                                className="text-[11px] text-[#9aa0a6] hover:text-white flex items-center gap-1.5 px-2 py-0.5 rounded border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.08] transition-colors"
                                 title="Copiar descripción"
                               >
                                 {copiedDesc ? (
@@ -704,7 +828,7 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                                   </>
                                 ) : (
                                   <>
-                                    <Copy className="w-3 h-3" /> Copiar texto
+                                    <Copy className="w-3 h-3 text-[#4285F4]" /> Copiar texto
                                   </>
                                 )}
                               </button>
@@ -712,89 +836,18 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                           </div>
 
                           {work.description ? (
-                            <div className="text-xs sm:text-sm text-neutral-200 whitespace-pre-line leading-relaxed bg-white/[0.02] p-4 rounded-2xl border border-white/[0.08] shadow-inner font-sans">
+                            <div className="p-3 sm:p-3.5 rounded-lg border border-white/[0.06] bg-[#070b13]/90 text-xs sm:text-sm text-neutral-200 whitespace-pre-line leading-relaxed font-sans shadow-inner">
                               {work.description}
                             </div>
                           ) : (
-                            <div className="text-xs text-[#9aa0a6] italic bg-white/[0.01] p-5 rounded-2xl border border-dashed border-white/[0.08] text-center">
+                            <div className="p-3.5 rounded-lg border border-dashed border-white/[0.06] bg-[#070b13]/60 text-xs text-[#9aa0a6] italic text-center">
                               Sin descripción complementaria registrada en este expediente.
                             </div>
                           )}
                         </div>
-
-                        {/* Ficha Resumida de Fechas */}
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6]">
-                            <span className="flex items-center gap-1.5 text-[#4285F4]">
-                              <Sparkles className="w-3.5 h-3.5" />
-                              Resumen de Fechas
-                            </span>
-                          </div>
-
-                          <div className="flex flex-col">
-                            <div className="flex items-center justify-between text-xs py-2.5 border-b border-white/[0.08]">
-                              <span className="text-[#9aa0a6] flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                                Fecha de Inicio
-                              </span>
-                              <span className="font-medium text-white">
-                                {work.start_date ? formatDate(work.start_date) : 'No definida'}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between text-xs py-2.5 border-b border-white/[0.08]">
-                              <span className="text-[#9aa0a6] flex items-center gap-1.5">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-[#81c995]" />
-                                Fecha de Finalización
-                              </span>
-                              <span className="font-medium text-white">
-                                {work.end_date ? formatDate(work.end_date) : 'En progreso / Abierto'}
-                              </span>
-                            </div>
-
-                            {duration && (
-                              <div className="flex items-center justify-between text-xs py-2.5 border-b border-white/[0.08]">
-                                <span className="text-[#9aa0a6] flex items-center gap-1.5">
-                                  <Hourglass className="w-3.5 h-3.5 text-[#8ab4f8]" />
-                                  Duración del Trabajo
-                                </span>
-                                <span className="font-medium text-white">{duration}</span>
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between text-xs py-2.5 border-b border-white/[0.08]">
-                              <span className="text-[#9aa0a6] flex items-center gap-1.5">
-                                <Wrench className="w-3.5 h-3.5 text-[#fdd663]" />
-                                Fecha de Próximo Mantenimiento
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={cn(
-                                    'font-medium',
-                                    work.next_maintenance_date ? 'text-[#fdd663]' : 'text-neutral-400 italic',
-                                  )}
-                                >
-                                  {work.next_maintenance_date
-                                    ? formatDate(work.next_maintenance_date)
-                                    : 'No programada'}
-                                </span>
-                                {isAuthenticated && (
-                                  <button
-                                    type="button"
-                                    onClick={() => onEdit(work)}
-                                    className="p-1 rounded-md text-[#9aa0a6] hover:text-[#8ab4f8] hover:bg-white/[0.06] transition-colors"
-                                    title="Editar fecha de mantenimiento"
-                                  >
-                                    <Pencil className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
                       </div>
                     )}
-                  </ScrollArea>
+                  </div>
 
                   {/* Pie de Ficha Fijo */}
                   <footer className="p-3.5 sm:p-4 px-5 border-t border-white/[0.08] bg-[#080c14]/95 backdrop-blur-md flex items-center justify-end gap-2 shrink-0 z-20">
@@ -810,12 +863,11 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                           Editar Ficha
                         </Button>
                       )}
-
                       <Button
                         variant="default"
                         size="sm"
                         onClick={onClose}
-                        className="w-full sm:w-auto min-w-[110px] font-medium bg-[#1a73e8] hover:bg-[#1557b0] text-white rounded-full shadow-[0_0_15px_rgba(26,115,232,0.35)] transition-all text-xs h-8 px-5"
+                        className="w-full sm:w-auto min-w-[110px] font-medium bg-[#1a73e8] hover:bg-[#1557b0] text-white rounded-full shadow-[0_0_15px_rgba(26,115,232,0.35)] transition-colors text-xs h-8 px-5"
                       >
                         Cerrar Ficha
                       </Button>
@@ -828,14 +880,16 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* Visor de Pantalla Completa (Lightbox) */}
-      {work && (
-        <MediaLightbox
-          isOpen={lightboxIndex !== null}
-          onClose={() => setLightboxIndex(null)}
-          mediaList={work.media}
-          initialIndex={lightboxIndex ?? 0}
-        />
+      {/* Visor de Pantalla Completa (Lightbox) montado solo bajo demanda */}
+      {work && lightboxIndex !== null && (
+        <React.Suspense fallback={null}>
+          <MediaLightbox
+            isOpen={true}
+            onClose={() => setLightboxIndex(null)}
+            mediaList={work.media}
+            initialIndex={lightboxIndex}
+          />
+        </React.Suspense>
       )}
 
       {/* Modal de Confirmación para Eliminar Evidencia Multimedia */}

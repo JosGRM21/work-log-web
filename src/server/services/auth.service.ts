@@ -38,7 +38,7 @@ export class AuthService {
       throw AppError.unauthorized('Credenciales inválidas. Compruebe el correo y la contraseña.');
     }
 
-    const token = createSessionToken(user.id, user.email);
+    const token = createSessionToken(user.id, user.email, user.fullName);
 
     return {
       token,

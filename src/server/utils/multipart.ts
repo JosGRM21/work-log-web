@@ -1,6 +1,7 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import busboy from 'busboy';
-import { Transform, type Readable, type TransformCallback } from 'node:stream';
+import sharp, { type Sharp } from 'sharp';
+import { Transform, PassThrough, type Readable, type TransformCallback } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
@@ -13,9 +14,13 @@ import {
 } from '../validators/media.validator.js';
 import { storage, type StorageDriver, type PutObjectResult } from '../storage/index.js';
 
+sharp.cache(false);
+sharp.concurrency(2);
+
 export interface UploadedFileStreamResult {
   key: string;
   url: string;
+  thumbnailUrl?: string;
   mimeType: string;
   mediaType: 'image' | 'video';
   sizeBytes: number;
@@ -44,10 +49,16 @@ class MediaValidationTransform extends Transform {
   public totalBytes = 0;
   public detected: DetectedMediaType | null = null;
   public storageKey = '';
+  public thumbKey: string | null = null;
   public storagePromise: Promise<PutObjectResult> | null = null;
+  public thumbStoragePromise: Promise<PutObjectResult> | null = null;
 
   private headerBuffer: Buffer = Buffer.alloc(0);
   private maxSizeBytes: number = MAX_VIDEO_SIZE_BYTES;
+  private mainInput: PassThrough | null = null;
+  private thumbInput: PassThrough | null = null;
+  private mainSharpInstance: Sharp | null = null;
+  private thumbSharpInstance: Sharp | null = null;
 
   constructor(
     private readonly filename: string,
@@ -106,19 +117,79 @@ class MediaValidationTransform extends Transform {
         return;
       }
 
-      this.storageKey = `works/${this.workId}/${randomUUID()}.${detectedType.extension}`;
-      this.storagePromise = this.storageDriver.putObject({
-        key: this.storageKey,
-        body: this,
-        mimeType: detectedType.mimeType,
-        signal: this.abortSignal,
-      });
+      const assetUuid = randomUUID();
 
-      this.callbacks.onStorageInitialized(this.storageKey, this.storagePromise);
+      if (detectedType.mediaType === 'image') {
+        this.storageKey = `works/${this.workId}/${assetUuid}.webp`;
+        this.thumbKey = `works/${this.workId}/${assetUuid}-thumb.webp`;
 
-      this.push(this.headerBuffer);
-      callback();
-      return;
+        this.mainInput = new PassThrough();
+        this.thumbInput = new PassThrough();
+
+        this.mainSharpInstance = sharp()
+          .rotate()
+          .resize({ width: 1920, withoutEnlargement: true })
+          .webp({ quality: 82 });
+
+        this.thumbSharpInstance = sharp()
+          .rotate()
+          .resize({ width: 480, height: 270, fit: 'cover' })
+          .webp({ quality: 75 });
+
+        this.mainSharpInstance.on('error', (err: Error) => {
+          this.destroy(
+            AppError.badRequest(
+              `Error al procesar la imagen "${this.filename}": ${err.message}`,
+            ),
+          );
+        });
+
+        this.thumbSharpInstance.on('error', (err: Error) => {
+          this.destroy(
+            AppError.badRequest(
+              `Error al generar la miniatura de "${this.filename}": ${err.message}`,
+            ),
+          );
+        });
+
+        this.mainInput.pipe(this.mainSharpInstance);
+        this.thumbInput.pipe(this.thumbSharpInstance);
+
+        this.storagePromise = this.storageDriver.putObject({
+          key: this.storageKey,
+          body: this.mainSharpInstance,
+          mimeType: 'image/webp',
+          signal: this.abortSignal,
+        });
+
+        this.thumbStoragePromise = this.storageDriver.putObject({
+          key: this.thumbKey,
+          body: this.thumbSharpInstance,
+          mimeType: 'image/webp',
+          signal: this.abortSignal,
+        });
+
+        this.callbacks.onStorageInitialized(this.storageKey, this.storagePromise);
+        this.callbacks.onStorageInitialized(this.thumbKey, this.thumbStoragePromise);
+
+        this.mainInput.write(this.headerBuffer);
+        this.thumbInput.write(this.headerBuffer);
+        callback();
+        return;
+      } else {
+        this.storageKey = `works/${this.workId}/${assetUuid}.${detectedType.extension}`;
+        this.storagePromise = this.storageDriver.putObject({
+          key: this.storageKey,
+          body: this,
+          mimeType: detectedType.mimeType,
+          signal: this.abortSignal,
+        });
+
+        this.callbacks.onStorageInitialized(this.storageKey, this.storagePromise);
+        this.push(this.headerBuffer);
+        callback();
+        return;
+      }
     }
 
     if (this.totalBytes > this.maxSizeBytes) {
@@ -131,7 +202,12 @@ class MediaValidationTransform extends Transform {
       return;
     }
 
-    this.push(chunk);
+    if (this.mainInput && this.thumbInput) {
+      this.mainInput.write(chunk);
+      this.thumbInput.write(chunk);
+    } else {
+      this.push(chunk);
+    }
     callback();
   }
 
@@ -144,7 +220,30 @@ class MediaValidationTransform extends Transform {
       );
       return;
     }
+
+    if (this.mainInput && this.thumbInput) {
+      this.mainInput.end();
+      this.thumbInput.end();
+    }
     callback();
+  }
+
+  override _destroy(error: Error | null, callback: (error: Error | null) => void): void {
+    if (error) {
+      if (this.mainInput) {
+        this.mainInput.destroy(error);
+      }
+      if (this.thumbInput) {
+        this.thumbInput.destroy(error);
+      }
+      if (this.mainSharpInstance) {
+        this.mainSharpInstance.destroy(error);
+      }
+      if (this.thumbSharpInstance) {
+        this.thumbSharpInstance.destroy(error);
+      }
+    }
+    callback(error);
   }
 }
 
@@ -249,20 +348,32 @@ export function parseAndUploadMultipartFiles(
         try {
           await pipeline(fileStream, validatorTransform);
           if (validatorTransform.storagePromise && validatorTransform.detected) {
-            const stored = await validatorTransform.storagePromise;
+            const [storedMain, storedThumb] = await Promise.all([
+              validatorTransform.storagePromise,
+              validatorTransform.thumbStoragePromise ?? Promise.resolve(null),
+            ]);
             activeKeys.delete(validatorTransform.storageKey);
+            if (validatorTransform.thumbKey) {
+              activeKeys.delete(validatorTransform.thumbKey);
+            }
             uploadedResults.push({
-              key: stored.key,
-              url: stored.url,
-              mimeType: validatorTransform.detected.mimeType,
+              key: storedMain.key,
+              url: storedMain.url,
+              thumbnailUrl: storedThumb?.url,
+              mimeType: validatorTransform.thumbKey
+                ? 'image/webp'
+                : validatorTransform.detected.mimeType,
               mediaType: validatorTransform.detected.mediaType,
-              sizeBytes: validatorTransform.totalBytes,
+              sizeBytes: storedMain.sizeBytes,
             });
           }
         } catch (err) {
           fileStream.resume();
           if (validatorTransform.storagePromise) {
             await validatorTransform.storagePromise.catch(() => {});
+          }
+          if (validatorTransform.thumbStoragePromise) {
+            await validatorTransform.thumbStoragePromise.catch(() => {});
           }
           throw err;
         }

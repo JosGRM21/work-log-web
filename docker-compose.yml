@@ -1,4 +1,22 @@
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: work_log_web_app
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres_dev_pwd@postgres:5432/work_log_web_db?schema=public
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - app_uploads:/app/uploads
+
   postgres:
     image: postgres:16-alpine
     container_name: work_log_web_postgres
@@ -19,4 +37,6 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  app_uploads:
     driver: local

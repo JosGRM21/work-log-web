@@ -8,6 +8,8 @@ import { errorHandler } from './middlewares/error-handler.middleware.js';
 
 export const app = express();
 
+app.set('trust proxy', 1);
+
 app.use(compression());
 
 app.use(
@@ -17,7 +19,7 @@ app.use(
   }),
 );
 
-app.use(express.json());
+app.use(express.json({ limit: '16kb' }));
 app.use(cookieParser());
 
 const uploadDir = path.resolve(process.cwd(), './uploads');
@@ -30,5 +32,35 @@ app.use(
 );
 
 app.use('/api/v1', apiRouter);
+
+// Servir frontend compilado en producción (assets inmutables y no-cache para index.html)
+if (process.env.NODE_ENV === 'production') {
+  const distDir = path.resolve(process.cwd(), './dist');
+  app.use(
+    '/assets',
+    express.static(path.join(distDir, 'assets'), {
+      maxAge: '1y',
+      immutable: true,
+    }),
+  );
+
+  app.use(
+    express.static(distDir, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    }),
+  );
+
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
 
 app.use(errorHandler);

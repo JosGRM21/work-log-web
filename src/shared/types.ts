@@ -18,6 +18,7 @@ export interface UserSummary {
 
 export interface MediaPreview {
   url: string;
+  thumbnail_url?: string;
   type: AllowedMediaType;
 }
 
@@ -40,6 +41,7 @@ export interface WorkItemSummary {
 export interface MediaAssetDTO {
   id: string;
   url: string;
+  thumbnail_url?: string;
   type: AllowedMediaType;
   size_bytes: number;
   sort_order: number;
@@ -60,10 +62,18 @@ export interface WorkItemDetail {
   media: MediaAssetDTO[];
 }
 
+export interface WorkListSummary {
+  completed: number;
+  in_progress: number;
+  pending: number;
+  total_media: number;
+}
+
 export interface ApiPaginationMeta {
   total: number;
   limit: number;
   offset: number;
+  summary?: WorkListSummary;
 }
 
 export interface WorkListResponse {

@@ -1,6 +1,8 @@
-import React from 'react';
-import type { WorkItemSummary, WorkStatus } from '../../../shared/types.js';
+import React, { useCallback, useRef } from 'react';
+import type { WorkItemSummary, WorkItemDetail } from '../../../shared/types.js';
 import { formatWorkDate } from '@/lib/utils';
+import { apiClient } from '../../api/client.js';
+import { getCachedWorkDetail, setCachedWorkDetail } from '../../hooks/use-works.js';
 import {
   Image as ImageIcon,
   Video as VideoIcon,
@@ -9,55 +11,50 @@ import {
   Calendar,
   Layers,
 } from 'lucide-react';
+import { STATUS_CONFIG } from '../../constants/status.js';
 
 interface WorkCardProps {
   work: WorkItemSummary;
-  onClick: () => void;
+  onSelect: (id: string) => void;
+  priority?: boolean;
 }
 
-const STATUS_CONFIG: Record<
-  WorkStatus,
-  {
-    label: string;
-    pillClass: string;
-    dotClass: string;
-    glowColor: string;
-    ping: boolean;
-  }
-> = {
-  pending: {
-    label: 'Por realizar',
-    pillClass: 'bg-black/65 text-[#e8eaed] border-white/15',
-    dotClass: 'bg-[#9aa0a6]',
-    glowColor: 'from-white/[0.06]',
-    ping: false,
-  },
-  in_progress: {
-    label: 'En curso',
-    pillClass: 'bg-[#081836]/80 text-[#8ab4f8] border-[#4285F4]/35',
-    dotClass: 'bg-[#4285F4] shadow-[0_0_8px_#4285F4]',
-    glowColor: 'from-[#1a73e8]/25',
-    ping: true,
-  },
-  completed: {
-    label: 'Terminado',
-    pillClass: 'bg-[#062014]/80 text-[#81c995] border-[#34a853]/35',
-    dotClass: 'bg-[#34a853] shadow-[0_0_8px_#34a853]',
-    glowColor: 'from-[#34a853]/15',
-    ping: false,
-  },
-};
-
-const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onClick }) => {
+const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onSelect, priority = false }) => {
   const hasMedia = !!work.media_preview;
   const isVideo = work.media_preview?.type === 'video';
   const status = STATUS_CONFIG[work.status] || STATUS_CONFIG.pending;
   const totalMedia = (work.media_count?.images || 0) + (work.media_count?.videos || 0);
+  const hoverTimerRef = useRef<number | null>(null);
+
+  const handleClick = useCallback(() => {
+    onSelect(work.id);
+  }, [onSelect, work.id]);
+
+  const handleMouseEnter = useCallback(() => {
+    if (getCachedWorkDetail(work.id)) return;
+    hoverTimerRef.current = window.setTimeout(async () => {
+      try {
+        const data = await apiClient.get<WorkItemDetail>(`/works/${work.id}`);
+        setCachedWorkDetail(work.id, data);
+      } catch {
+        // Silently ignore prefetch failures
+      }
+    }, 150);
+  }, [work.id]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimerRef.current) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
 
   return (
     <article
-      onClick={onClick}
-      className="group relative cursor-pointer rounded-[28px] p-2.5 flex flex-col justify-between bg-gradient-to-b from-[#0b1936]/50 via-[#070b14] to-[#04060b] border border-white/[0.08] hover:border-[#4285F4]/45 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_45px_-15px_rgba(26,115,232,0.22)] select-none overflow-hidden"
+      onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className="group relative cursor-pointer rounded-[28px] p-2.5 flex flex-col justify-between bg-gradient-to-b from-[#0b1936]/50 via-[#070b14] to-[#04060b] border border-white/[0.08] hover:border-[#4285F4]/45 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-[0_20px_45px_-15px_rgba(26,115,232,0.22)] select-none overflow-hidden"
     >
       {/* Destello luminoso superior estilo Google One AI Card */}
       <div
@@ -72,15 +69,13 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onClick }) => {
             <div className="relative w-full h-full flex items-center justify-center bg-black">
               <video
                 src={work.media_preview!.url}
-                className="w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700 ease-out"
+                poster={work.media_preview?.thumbnail_url}
+                className="w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition-[transform,opacity] duration-700 ease-out"
                 preload="none"
               />
-              {/* Viñeta oscura suave */}
               <div className="absolute inset-0 bg-gradient-to-t from-[#060a12]/90 via-black/20 to-black/30" />
-
-              {/* Botón Play central */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-12 h-12 rounded-full bg-black/55 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shadow-lg group-hover:bg-[#1a73e8] group-hover:border-[#4285F4] group-hover:scale-110 transition-all duration-300">
+                <div className="w-12 h-12 rounded-full bg-black/55 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shadow-lg group-hover:bg-[#1a73e8] group-hover:border-[#4285F4] group-hover:scale-110 transition-[transform,background-color,border-color] duration-300">
                   <Play className="w-5 h-5 ml-0.5 fill-current" />
                 </div>
               </div>
@@ -88,18 +83,25 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onClick }) => {
           ) : (
             <div className="relative w-full h-full">
               <img
-                src={work.media_preview!.url}
+                src={work.media_preview!.thumbnail_url || work.media_preview!.url}
                 alt={work.title}
-                loading="lazy"
+                loading={priority ? 'eager' : 'lazy'}
+                fetchPriority={priority ? 'high' : 'auto'}
                 decoding="async"
+                onError={(e) => {
+                  if (
+                    work.media_preview?.thumbnail_url &&
+                    e.currentTarget.src !== work.media_preview.url
+                  ) {
+                    e.currentTarget.src = work.media_preview.url;
+                  }
+                }}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
               />
-              {/* Viñeta inferior suave para fundir la foto con la tarjeta */}
               <div className="absolute inset-0 bg-gradient-to-t from-[#060a12]/85 via-transparent to-black/25 opacity-90 group-hover:opacity-75 transition-opacity" />
             </div>
           )
         ) : (
-          /* Estado sin imagen con atmósfera azul sutil */
           <div
             className={`relative w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-br ${status.glowColor} via-[#060a14] to-[#03050a]`}
           >
@@ -138,7 +140,7 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onClick }) => {
             )}
             {work.media_count.videos > 0 && (
               <span className="flex items-center gap-1" title="Videos">
-                <VideoIcon className="w-3 h-3 text-[#c58af9]" />
+                <VideoIcon className="w-3.5 h-3.5 text-[#c58af9]" />
                 {work.media_count.videos}
               </span>
             )}
@@ -149,7 +151,6 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onClick }) => {
       {/* Cuerpo Tipográfico de la Tarjeta */}
       <div className="px-3.5 pt-4 pb-3 flex flex-col flex-1 justify-between gap-5">
         <div className="space-y-2">
-          {/* Metadatos: Fecha */}
           <div className="flex items-center gap-2 text-xs text-[#80868b]">
             <span className="inline-flex items-center gap-1.5 text-[#9aa0a6] font-normal">
               <Calendar className="w-3.5 h-3.5 text-[#669df6]" />
@@ -157,7 +158,6 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onClick }) => {
             </span>
           </div>
 
-          {/* Título de la Obra */}
           <h3 className="text-[17px] sm:text-[18px] font-medium tracking-[-0.015em] text-[#f1f3f4] line-clamp-2 leading-[1.35] group-hover:text-[#8ab4f8] transition-colors font-heading">
             {work.title}
           </h3>
@@ -168,9 +168,8 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onClick }) => {
           <span className="text-xs font-medium text-[#80868b] group-hover:text-[#e8eaed] transition-colors">
             Explorar expediente
           </span>
-
-          <div className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#9aa0a6] flex items-center justify-center group-hover:bg-[#1a73e8] group-hover:border-[#4285F4] group-hover:text-white group-hover:shadow-[0_0_15px_rgba(26,115,232,0.5)] transition-all duration-300">
-            <ArrowUpRight className="w-4 h-4 stroke-[2.2] transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          <div className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#9aa0a6] flex items-center justify-center group-hover:bg-[#1a73e8] group-hover:border-[#4285F4] group-hover:text-white group-hover:shadow-[0_0_15px_rgba(26,115,232,0.5)] transition-[background-color,border-color,color,box-shadow] duration-300">
+            <ArrowUpRight className="w-4 h-4 stroke-[2.2] transition-transform duration-300 group-hover:scale-115" />
           </div>
         </div>
       </div>
@@ -180,11 +179,15 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onClick }) => {
 
 export const WorkCard = React.memo(WorkCardComponent, (prev, next) => {
   return (
+    prev.onSelect === next.onSelect &&
+    prev.priority === next.priority &&
     prev.work.id === next.work.id &&
     prev.work.status === next.work.status &&
     prev.work.title === next.work.title &&
     prev.work.reference_date === next.work.reference_date &&
     prev.work.media_preview?.url === next.work.media_preview?.url &&
+    prev.work.media_preview?.thumbnail_url === next.work.media_preview?.thumbnail_url &&
+    prev.work.media_preview?.type === next.work.media_preview?.type &&
     prev.work.media_count?.images === next.work.media_count?.images &&
     prev.work.media_count?.videos === next.work.media_count?.videos
   );

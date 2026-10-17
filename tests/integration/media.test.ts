@@ -15,10 +15,11 @@ describe('Media Pipeline & Physical Purge API (Integration)', () => {
   let uploadedMediaId = '';
   let uploadedFilePath = '';
 
-  // Búfer sintético de PNG con cabecera legítima (16 bytes)
-  const validPngBuffer = Buffer.from([
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-  ]);
+  // Búfer legítimo de PNG (1x1 píxel) para validación de magic bytes y pipeline sharp
+  const validPngBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
 
   // Búfer sintético de MP4 con cabecera ftyp legítima (16 bytes)
   const validMp4Buffer = Buffer.from([
