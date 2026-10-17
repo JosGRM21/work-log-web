@@ -343,20 +343,11 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
             </div>
           ) : (
             <div className="flex flex-col h-full min-h-0">
-              {/* Barra Superior Unificada con Título */}
+              {/* Barra Superior Unificada */}
               <header className="px-5 sm:px-6 py-3 border-b border-white/[0.08] flex items-center justify-between gap-4 shrink-0 bg-[#080c14]/95 backdrop-blur-md z-20">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <DialogHeader className="p-0 m-0 text-left min-w-0 flex-1">
-                    <DialogTitle className="text-base sm:text-lg font-medium tracking-tight text-white leading-snug font-heading truncate">
-                      {work.title}
-                    </DialogTitle>
-                    <DialogDescription className="sr-only">
-                      Expediente técnico de la obra {work.title}.
-                    </DialogDescription>
-                  </DialogHeader>
-
+                <div className="flex items-center gap-3 min-w-0">
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs text-[#9aa0a6] hidden md:inline-flex items-center gap-1.5 pl-1 border-l border-white/[0.08]">
+                    <span className="text-xs text-[#9aa0a6] inline-flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-[#4285F4]" />
                       {formatWorkDate(work.reference_date)}
                     </span>
@@ -764,6 +755,15 @@ export const WorkDetailModal: React.FC<WorkDetailModalProps> = ({
                       </div>
                     ) : (
                       <div className="space-y-4">
+                        <DialogHeader className="p-0 m-0 text-left">
+                          <DialogTitle className="text-lg sm:text-xl font-semibold tracking-tight text-white leading-snug font-heading">
+                            {work.title}
+                          </DialogTitle>
+                          <DialogDescription className="sr-only">
+                            Expediente técnico de la obra {work.title}.
+                          </DialogDescription>
+                        </DialogHeader>
+
                         <div className="rounded-xl border border-white/[0.08] bg-[#0c121e]/80 p-3.5 sm:p-4 space-y-3 shadow-md">
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] font-bold tracking-wider text-[#8ab4f8] uppercase flex items-center gap-1.5">
