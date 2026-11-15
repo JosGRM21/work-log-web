@@ -5,6 +5,7 @@ export { VALID_WORK_STATUSES, isValidUuid, type WorkStatus };
 
 export interface ListWorksQuery {
   status?: WorkStatus;
+  area?: string;
   order: 'asc' | 'desc';
   limit: number;
   offset: number;
@@ -12,6 +13,7 @@ export interface ListWorksQuery {
 
 export interface CreateWorkDTO {
   title: string;
+  area?: string | null;
   description?: string | null;
   status: WorkStatus;
   referenceDate: Date;
@@ -22,12 +24,41 @@ export interface CreateWorkDTO {
 
 export interface UpdateWorkDTO {
   title?: string;
+  area?: string | null;
   description?: string | null;
   status?: WorkStatus;
   referenceDate?: Date;
   startDate?: Date | null;
   endDate?: Date | null;
   nextMaintenanceDate?: Date | null;
+}
+
+function parseOptionalArea(val: unknown): string | null {
+  if (val === undefined || val === null || val === '') {
+    return null;
+  }
+  if (typeof val !== 'string') {
+    throw AppError.badRequest('El campo "area" debe ser una cadena de texto.');
+  }
+  const cleanArea = val.trim();
+  if (cleanArea.length === 0) {
+    return null;
+  }
+  if (cleanArea.length > 100) {
+    throw AppError.badRequest('El área (area) excede el límite máximo de 100 caracteres.');
+  }
+  return cleanArea;
+}
+
+function parseOptionalDescription(val: unknown): string | null {
+  if (val === undefined || val === null || val === '') {
+    return null;
+  }
+  if (typeof val !== 'string') {
+    throw AppError.badRequest('El campo "description" debe ser una cadena de texto.');
+  }
+  const clean = val.trim();
+  return clean.length > 0 ? clean : null;
 }
 
 export function parseDateOnly(val: unknown, fieldName: string): Date | null {
@@ -97,6 +128,17 @@ export function parseListWorksQuery(query: Record<string, unknown>): ListWorksQu
     status = rawStatus as WorkStatus;
   }
 
+  let area: string | undefined;
+  if (query.area !== undefined && query.area !== '') {
+    const rawArea = String(query.area).trim();
+    if (rawArea.length > 100) {
+      throw AppError.badRequest('El parámetro "area" no puede exceder 100 caracteres.');
+    }
+    if (rawArea.length > 0) {
+      area = rawArea;
+    }
+  }
+
   let order: 'asc' | 'desc' = 'desc';
   if (query.order !== undefined && query.order !== '') {
     const rawOrder = String(query.order).toLowerCase().trim();
@@ -124,12 +166,20 @@ export function parseListWorksQuery(query: Record<string, unknown>): ListWorksQu
     offset = parsedOffset;
   }
 
-  return { status, order, limit, offset };
+  return { status, area, order, limit, offset };
 }
 
 export function validateCreateWorkInput(body: Record<string, unknown>): CreateWorkDTO {
-  const { title, description, status, reference_date, start_date, end_date, next_maintenance_date } =
-    body ?? {};
+  const {
+    title,
+    area,
+    description,
+    status,
+    reference_date,
+    start_date,
+    end_date,
+    next_maintenance_date,
+  } = body ?? {};
 
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
     throw AppError.badRequest('El título (title) es obligatorio y no puede estar vacío.');
@@ -139,6 +189,8 @@ export function validateCreateWorkInput(body: Record<string, unknown>): CreateWo
   if (cleanTitle.length > 150) {
     throw AppError.badRequest('El título (title) excede el límite máximo de 150 caracteres.');
   }
+
+  const cleanArea = parseOptionalArea(area);
 
   let cleanStatus: WorkStatus = 'pending';
   if (status !== undefined && status !== null && status !== '') {
@@ -152,7 +204,10 @@ export function validateCreateWorkInput(body: Record<string, unknown>): CreateWo
   }
 
   let referenceDate: Date;
-  if (reference_date !== undefined && reference_date !== null && reference_date !== '') {
+  if (reference_date === null) {
+    throw AppError.badRequest('El campo "reference_date" no puede ser nulo.');
+  }
+  if (reference_date !== undefined && reference_date !== '') {
     const parsedRef = parseDateOnly(reference_date, 'reference_date');
     if (!parsedRef) {
       throw AppError.badRequest('El campo "reference_date" no puede ser nulo si se suministra.');
@@ -160,7 +215,9 @@ export function validateCreateWorkInput(body: Record<string, unknown>): CreateWo
     referenceDate = parsedRef;
   } else {
     const now = new Date();
-    referenceDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    referenceDate = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
   }
 
   const startDate = parseDateOnly(start_date, 'start_date');
@@ -171,7 +228,8 @@ export function validateCreateWorkInput(body: Record<string, unknown>): CreateWo
 
   return {
     title: cleanTitle,
-    description: typeof description === 'string' && description.trim() ? description.trim() : null,
+    area: cleanArea,
+    description: parseOptionalDescription(description),
     status: cleanStatus,
     referenceDate,
     startDate,
@@ -198,11 +256,12 @@ export function validateUpdateWorkInput(body: Record<string, unknown>): UpdateWo
     result.title = cleanTitle;
   }
 
+  if (body.area !== undefined) {
+    result.area = parseOptionalArea(body.area);
+  }
+
   if (body.description !== undefined) {
-    result.description =
-      typeof body.description === 'string' && body.description.trim()
-        ? body.description.trim()
-        : null;
+    result.description = parseOptionalDescription(body.description);
   }
 
   if (body.status !== undefined) {

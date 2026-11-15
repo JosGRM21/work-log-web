@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import { ApiClientError } from '@/api/client.js';
 import { authApi } from '../api/auth.api.js';
 import type { UserSummary } from '@shared/types.js';
 
@@ -43,8 +44,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(async () => {
-    await authApi.logout();
-    setUser(null);
+    try {
+      await authApi.logout();
+    } catch (err) {
+      // Si la sesión ya expiró en el servidor (401), igualmente limpiamos la sesión local
+      if (!(err instanceof ApiClientError && err.statusCode === 401)) {
+        throw err;
+      }
+    } finally {
+      setUser(null);
+    }
   }, []);
 
   const contextValue = useMemo<AuthContextType>(

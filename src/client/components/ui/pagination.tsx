@@ -51,7 +51,7 @@ function PaginationLink({
           variant: isActive ? 'outline' : 'ghost',
           size,
         }),
-        'cursor-pointer select-none rounded-full transition-all duration-200 h-8 w-8 text-xs',
+        'cursor-pointer select-none touch-manipulation rounded-full transition-all duration-200 h-10 min-w-10 sm:h-8 sm:min-w-8 sm:w-8 text-xs',
         isActive
           ? 'bg-white/[0.12] text-white border-white/20 shadow-xs font-semibold'
           : 'text-[#9aa0a6] hover:text-white hover:bg-white/[0.06]',
@@ -72,7 +72,7 @@ function PaginationPrevious({
       aria-label="Ir a página anterior"
       size="default"
       className={cn(
-        'w-auto gap-1 px-3 h-8 rounded-full border border-white/10 text-xs font-medium text-white hover:border-[#4285F4]/40 hover:bg-white/[0.06]',
+        'w-auto gap-1 px-3.5 sm:px-3 h-10 sm:h-8 rounded-full border border-white/10 text-xs font-medium text-white hover:border-[#4285F4]/40 hover:bg-white/[0.06]',
         className,
       )}
       {...props}
@@ -92,7 +92,7 @@ function PaginationNext({
       aria-label="Ir a página siguiente"
       size="default"
       className={cn(
-        'w-auto gap-1 px-3 h-8 rounded-full border border-white/10 text-xs font-medium text-white hover:border-[#4285F4]/40 hover:bg-white/[0.06]',
+        'w-auto gap-1 px-3.5 sm:px-3 h-10 sm:h-8 rounded-full border border-white/10 text-xs font-medium text-white hover:border-[#4285F4]/40 hover:bg-white/[0.06]',
         className,
       )}
       {...props}

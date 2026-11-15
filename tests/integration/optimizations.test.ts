@@ -125,9 +125,9 @@ describe('Performance, Media Pipeline & Caching Optimizations (Integration)', ()
       body: JSON.stringify({
         files: [
           {
-            name: 'foto1.jpg',
-            type: 'image/jpeg',
-            size: 1024 * 50,
+            filename: 'foto1.jpg',
+            mimeType: 'image/jpeg',
+            sizeBytes: 1024 * 50,
           },
         ],
       }),

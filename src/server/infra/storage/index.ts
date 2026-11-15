@@ -26,7 +26,8 @@ function createStorageDriver(): StorageDriver {
     });
   }
 
-  return new LocalDiskStorageDriver();
+  const uploadDir = process.env.LOCAL_UPLOAD_PATH || './uploads';
+  return new LocalDiskStorageDriver(uploadDir);
 }
 
 export const storage = createStorageDriver();

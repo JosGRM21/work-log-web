@@ -7,13 +7,22 @@ import { prisma } from '../../src/server/infra/db/client.js';
 interface WorkItemSummary {
   id: string;
   title: string;
+  area: string | null;
   status: string;
   reference_date: string;
 }
 
 interface ListResponse {
   data: WorkItemSummary[];
-  meta: { total: number };
+  meta: {
+    total: number;
+    areas?: string[];
+    filtered_summary?: {
+      completed: number;
+      in_progress: number;
+      pending: number;
+    };
+  };
 }
 
 describe('Works CRUD API (Integration)', () => {
@@ -109,6 +118,7 @@ describe('Works CRUD API (Integration)', () => {
       },
       body: JSON.stringify({
         title: 'Construcción de Escalera Metálica',
+        area: 'Planta de Beneficio Test',
         description: 'Perfiles estructurales y peldaños antideslizantes.',
         status: 'pending',
         reference_date: '2026-10-12',
@@ -118,18 +128,39 @@ describe('Works CRUD API (Integration)', () => {
       }),
     });
     expect(res.status).toBe(201);
-    const json = (await res.json()) as { id: string; title: string };
+    const json = (await res.json()) as { id: string; title: string; area: string | null };
     expect(json.id).toBeTruthy();
     expect(json.title).toBe('Construcción de Escalera Metálica');
+    expect(json.area).toBe('Planta de Beneficio Test');
     createdWorkId = json.id;
 
     const detailRes = await fetch(`${baseUrl}/works/${createdWorkId}`);
     expect(detailRes.status).toBe(200);
-    const detailJson = (await detailRes.json()) as { next_maintenance_date: string };
+    const detailJson = (await detailRes.json()) as {
+      area: string | null;
+      next_maintenance_date: string;
+    };
+    expect(detailJson.area).toBe('Planta de Beneficio Test');
     expect(detailJson.next_maintenance_date).toBe('2027-04-15');
   });
 
-  it('PATCH /works/:id debe actualizar parcialmente el trabajo y su fecha de próximo mantenimiento', async () => {
+  it('GET /works?area=... debe filtrar por área y devolver meta.areas y meta.filtered_summary', async () => {
+    const res = await fetch(
+      `${baseUrl}/works?area=${encodeURIComponent('planta de beneficio test')}`,
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as ListResponse;
+    expect(json.data.some((w) => w.id === createdWorkId)).toBe(true);
+    expect(json.data.every((w) => w.area?.toLowerCase() === 'planta de beneficio test')).toBe(
+      true,
+    );
+    expect(json.meta.total).toBeGreaterThanOrEqual(1);
+    expect(json.meta.areas).toContain('Planta de Beneficio Test');
+    expect(json.meta.filtered_summary).toBeDefined();
+    expect(json.meta.filtered_summary?.pending).toBeGreaterThanOrEqual(1);
+  });
+
+  it('PATCH /works/:id debe actualizar parcialmente el trabajo, su área y su fecha de próximo mantenimiento', async () => {
     const res = await fetch(`${baseUrl}/works/${createdWorkId}`, {
       method: 'PATCH',
       headers: {
@@ -138,17 +169,23 @@ describe('Works CRUD API (Integration)', () => {
       },
       body: JSON.stringify({
         status: 'in_progress',
+        area: 'Almacén Norte Test',
         description: 'Actualización en curso.',
         next_maintenance_date: '2027-06-20',
       }),
     });
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { status: string };
+    const json = (await res.json()) as { status: string; area: string | null };
     expect(json.status).toBe('in_progress');
+    expect(json.area).toBe('Almacén Norte Test');
 
     const detailRes = await fetch(`${baseUrl}/works/${createdWorkId}`);
     expect(detailRes.status).toBe(200);
-    const detailJson = (await detailRes.json()) as { next_maintenance_date: string };
+    const detailJson = (await detailRes.json()) as {
+      area: string | null;
+      next_maintenance_date: string;
+    };
+    expect(detailJson.area).toBe('Almacén Norte Test');
     expect(detailJson.next_maintenance_date).toBe('2027-06-20');
   });
 

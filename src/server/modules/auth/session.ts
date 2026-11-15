@@ -34,6 +34,10 @@ function getSessionSecret(): string {
   return secret;
 }
 
+export function assertSessionSecretConfigured(): void {
+  getSessionSecret();
+}
+
 export function createSessionToken(userId: string, email: string, fullName: string = ''): string {
   const secret = getSessionSecret();
   const payload: SessionPayload = {
@@ -113,9 +117,17 @@ export function getSessionCookieOptions(): CookieOptions {
         ? 'none'
         : 'lax';
 
+  const configuredSecure = process.env.SESSION_COOKIE_SECURE?.toLowerCase();
+  const secure =
+    configuredSecure === 'true'
+      ? true
+      : configuredSecure === 'false'
+        ? false
+        : isProduction || sameSite === 'none';
+
   return {
     httpOnly: true,
-    secure: isProduction || sameSite === 'none',
+    secure,
     sameSite,
     path: '/',
     maxAge: SESSION_EXPIRATION_MS,

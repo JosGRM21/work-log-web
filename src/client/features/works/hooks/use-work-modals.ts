@@ -26,13 +26,25 @@ export function useWorkModals({ onWorkDeleted }: UseWorkModalsProps = {}) {
     setWorkToEdit(null);
   }, []);
 
-  const selectWork = useCallback((id: string) => setSelectedWorkId(id), []);
-  const closeDetail = useCallback(() => setSelectedWorkId(null), []);
+  const selectWork = useCallback((id: string) => {
+    setDetailRefreshKey(0);
+    setSelectedWorkId(id);
+  }, []);
+  const closeDetail = useCallback(() => {
+    setSelectedWorkId(null);
+    setDetailRefreshKey(0);
+  }, []);
 
   const editWork = useCallback((work: WorkItemDetail) => setWorkToEdit(work), []);
 
   const requestDelete = useCallback((workId: string) => setWorkIdToDelete(workId), []);
   const cancelDelete = useCallback(() => setWorkIdToDelete(null), []);
+
+  const resetAdminModals = useCallback(() => {
+    setIsCreateOpen(false);
+    setWorkToEdit(null);
+    setWorkIdToDelete(null);
+  }, []);
 
   const refreshDetail = useCallback(() => {
     setDetailRefreshKey((prev) => prev + 1);
@@ -84,5 +96,6 @@ export function useWorkModals({ onWorkDeleted }: UseWorkModalsProps = {}) {
     confirmDeleteWork,
     detailRefreshKey,
     refreshDetail,
+    resetAdminModals,
   };
 }

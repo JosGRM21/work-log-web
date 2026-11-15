@@ -146,4 +146,40 @@ describe('Security Verification (Phase 7 - QA & Hardening)', () => {
       expect(res.status).toBe(401);
     });
   });
+
+  describe('Manejo de Errores de Parser JSON (400 y 413)', () => {
+    it('debe responder con 400 BAD_REQUEST ante un cuerpo JSON con sintaxis inválida', async () => {
+      const res = await fetch(`${baseUrl}/works`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: sessionCookie,
+        },
+        body: '{ "title": "JSON roto", ',
+      });
+
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as { error?: { code: string } };
+      expect(json.error?.code).toBe('BAD_REQUEST');
+    });
+
+    it('debe responder con 413 PAYLOAD_TOO_LARGE si el JSON supera 16 KB', async () => {
+      const oversizedDescription = 'x'.repeat(20 * 1024);
+      const res = await fetch(`${baseUrl}/works`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: sessionCookie,
+        },
+        body: JSON.stringify({
+          title: 'Payload demasiado grande',
+          description: oversizedDescription,
+        }),
+      });
+
+      expect(res.status).toBe(413);
+      const json = (await res.json()) as { error?: { code: string } };
+      expect(json.error?.code).toBe('PAYLOAD_TOO_LARGE');
+    });
+  });
 });

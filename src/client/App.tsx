@@ -1,13 +1,14 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useEffect } from 'react';
 import { useWorks, invalidateWorkDetailCache } from './features/works/hooks/use-works.js';
 import { useWorkModals } from './features/works/hooks/use-work-modals.js';
+import { useMediaQuery } from './hooks/use-media-query.js';
+import { useAuth } from './features/auth/context/auth-context.js';
 import type { WorkStatus } from '@shared/types.js';
 
 import { Navbar } from './components/layout/navbar.js';
 import { HeroSection } from './features/works/components/hero-section.js';
-import { FeedFilters, type ViewMode } from './features/works/components/feed-filters.js';
+import { FeedFilters } from './features/works/components/feed-filters.js';
 import { WorkCard } from './features/works/components/work-card.js';
-import { WorkTimelineItem } from './features/works/components/work-timeline-item.js';
 import { WorkFeedSkeletons } from './features/works/components/work-feed-skeletons.js';
 
 // Modales cargados dinámicamente mediante code-splitting
@@ -44,6 +45,8 @@ export const App: React.FC = () => {
     works,
     total,
     summary,
+    filteredSummary,
+    areas,
     limit,
     offset,
     setOffset,
@@ -51,12 +54,15 @@ export const App: React.FC = () => {
     error,
     statusFilter,
     setStatusFilter,
+    areaFilter,
+    setAreaFilter,
     order,
     setOrder,
     refetch,
   } = useWorks({ limit: ITEMS_PER_PAGE });
 
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const isMobile = useMediaQuery('(max-width: 639px)');
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
 
   const {
     isLoginOpen,
@@ -77,9 +83,16 @@ export const App: React.FC = () => {
     confirmDeleteWork,
     detailRefreshKey,
     refreshDetail,
+    resetAdminModals,
   } = useWorkModals({
     onWorkDeleted: () => void refetch(true),
   });
+
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      resetAdminModals();
+    }
+  }, [isAuthLoading, isAuthenticated, resetAdminModals]);
 
   const handleOrderToggle = useCallback(
     () => setOrder(order === 'desc' ? 'asc' : 'desc'),
@@ -89,12 +102,21 @@ export const App: React.FC = () => {
     (status: WorkStatus | 'all') => setStatusFilter(status),
     [setStatusFilter],
   );
-  const handleViewModeChange = useCallback((mode: ViewMode) => setViewMode(mode), []);
+  const handleAreaChange = useCallback(
+    (area: string | 'all') => setAreaFilter(area),
+    [setAreaFilter],
+  );
+  const handleResetFilters = useCallback(() => {
+    setStatusFilter('all');
+    setAreaFilter('all');
+  }, [setStatusFilter, setAreaFilter]);
 
-  // Métricas globales reales recibidas del backend (meta.summary)
+  // Métricas globales reales recibidas del backend (meta.summary) y conteos filtrados por área
   const metrics = useMemo(() => {
     if (summary) {
       const allCount = summary.completed + summary.in_progress + summary.pending;
+      const tabSource = areaFilter !== 'all' && filteredSummary ? filteredSummary : summary;
+      const tabAllCount = tabSource.completed + tabSource.in_progress + tabSource.pending;
       return {
         total: allCount > 0 ? allCount : total,
         completed: summary.completed,
@@ -102,10 +124,10 @@ export const App: React.FC = () => {
         pending: summary.pending,
         totalMedia: summary.total_media,
         counts: {
-          all: allCount > 0 ? allCount : total,
-          completed: summary.completed,
-          in_progress: summary.in_progress,
-          pending: summary.pending,
+          all: areaFilter !== 'all' ? tabAllCount : allCount > 0 ? allCount : total,
+          completed: tabSource.completed,
+          in_progress: tabSource.in_progress,
+          pending: tabSource.pending,
         },
       };
     }
@@ -135,7 +157,7 @@ export const App: React.FC = () => {
         pending,
       },
     };
-  }, [summary, total, works]);
+  }, [summary, filteredSummary, areaFilter, total, works]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const currentPage = Math.floor(offset / limit) + 1;
@@ -181,38 +203,38 @@ export const App: React.FC = () => {
   }, [totalPages, currentPage]);
 
   return (
-    <div className="min-h-screen bg-black text-white relative overflow-x-hidden flex flex-col antialiased selection:bg-[#1a73e8]/30 selection:text-blue-100">
+    <div className="min-h-screen bg-black text-white relative overflow-x-clip flex flex-col antialiased selection:bg-[#1a73e8]/30 selection:text-blue-100">
       <Navbar onOpenLogin={openLogin} onOpenCreate={openCreate} />
 
-      <section className="google-one-hero w-full pt-20 sm:pt-28 pb-10 sm:pb-14 px-4 sm:px-6 flex flex-col items-center">
+      <section className="google-one-hero w-full pt-6 sm:pt-16 md:pt-24 pb-6 sm:pb-12 px-4 sm:px-6 flex flex-col items-center">
         <div className="max-w-7xl w-full mx-auto relative z-10">
           <HeroSection
             totalWorks={metrics.total}
             completedCount={metrics.completed}
             inProgressCount={metrics.inProgress}
             totalMediaCount={metrics.totalMedia}
-            isLoading={isLoading}
+            isLoading={isLoading && !summary}
           />
         </div>
       </section>
 
       <main
         id="catalogo-obras"
-        className="bg-black max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 flex-1 flex flex-col gap-8 relative z-10"
+        className="bg-black max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 sm:py-8 flex-1 flex flex-col gap-5 sm:gap-8 relative z-10"
       >
         <FeedFilters
           currentStatus={statusFilter}
           onStatusChange={handleStatusChange}
+          currentArea={areaFilter}
+          availableAreas={areas}
+          onAreaChange={handleAreaChange}
           currentOrder={order}
           onOrderToggle={handleOrderToggle}
-          totalResults={works.length}
-          viewMode={viewMode}
-          onViewModeChange={handleViewModeChange}
           counts={metrics.counts}
         />
 
-        {/* Estado de Carga adaptado al modo de vista actual (previene CLS) */}
-        {isLoading && <WorkFeedSkeletons viewMode={viewMode} count={ITEMS_PER_PAGE} />}
+        {/* Estado de Carga adaptado (previene CLS) */}
+        {isLoading && <WorkFeedSkeletons count={ITEMS_PER_PAGE} />}
 
         {/* Estado de Error */}
         {!isLoading && error && (
@@ -241,15 +263,15 @@ export const App: React.FC = () => {
               No hay trabajos disponibles
             </h3>
             <p className="text-xs text-[#9aa0a6] max-w-xs mb-5 leading-relaxed">
-              {statusFilter !== 'all'
-                ? 'No se encontraron registros en el estado seleccionado actualmente.'
+              {statusFilter !== 'all' || areaFilter !== 'all'
+                ? 'No se encontraron registros con los filtros seleccionados actualmente.'
                 : 'Aún no se han registrado obras técnicas en la bitácora de MIBITURVEN S.A.'}
             </p>
-            {statusFilter !== 'all' && (
+            {(statusFilter !== 'all' || areaFilter !== 'all') && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleStatusChange('all')}
+                onClick={handleResetFilters}
                 className="rounded-full border-white/15 text-[#8ab4f8] hover:bg-[#1a73e8]/15"
               >
                 Ver todos los proyectos
@@ -258,36 +280,22 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Lista / Grid de Trabajos */}
+        {/* Lista / Grid de Trabajos en Modo Tarjeta */}
         {!isLoading && !error && works.length > 0 && (
           <>
-            {viewMode === 'grid' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {works.map((work, index) => (
-                  <WorkCard
-                    key={work.id}
-                    work={work}
-                    onSelect={selectWork}
-                    priority={offset === 0 && index < 3}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col py-2 max-w-4xl mx-auto w-full">
-                {works.map((work, index) => (
-                  <WorkTimelineItem
-                    key={work.id}
-                    work={work}
-                    onSelect={selectWork}
-                    isLast={index === works.length - 1}
-                    priority={offset === 0 && index < 3}
-                  />
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {works.map((work, index) => (
+                <WorkCard
+                  key={work.id}
+                  work={work}
+                  onSelect={selectWork}
+                  priority={offset === 0 && index < 3}
+                />
+              ))}
+            </div>
 
             {/* Pie de catálogo */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-white/[0.08] pt-6 mt-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-white/[0.08] pt-5 sm:pt-6 mt-2 sm:mt-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
               <div className="flex items-center gap-2 text-xs text-[#9aa0a6] select-none">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#4285F4]" />
                 <span>
@@ -301,42 +309,67 @@ export const App: React.FC = () => {
               </div>
 
               {totalPages > 1 && (
-                <Pagination className="mx-0 w-auto justify-center sm:justify-end">
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious
-                        disabled={currentPage === 1}
-                        onClick={() => handlePageChange(currentPage - 1)}
-                      />
-                    </PaginationItem>
+                <Pagination className="mx-0 w-full sm:w-auto justify-center sm:justify-end">
+                  {isMobile ? (
+                    <PaginationContent className="w-full justify-between max-w-xs">
+                      <PaginationItem>
+                        <PaginationPrevious
+                          disabled={currentPage === 1}
+                          onClick={() => handlePageChange(currentPage - 1)}
+                        />
+                      </PaginationItem>
 
-                    {pageNumbers.map((page, index) => {
-                      if (page === 'ellipsis') {
+                      <PaginationItem>
+                        <span className="text-xs font-medium text-[#9aa0a6] tabular-nums px-3">
+                          Página <strong className="text-white">{currentPage}</strong> de{' '}
+                          <strong className="text-white">{totalPages}</strong>
+                        </span>
+                      </PaginationItem>
+
+                      <PaginationItem>
+                        <PaginationNext
+                          disabled={currentPage === totalPages}
+                          onClick={() => handlePageChange(currentPage + 1)}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  ) : (
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          disabled={currentPage === 1}
+                          onClick={() => handlePageChange(currentPage - 1)}
+                        />
+                      </PaginationItem>
+
+                      {pageNumbers.map((page, index) => {
+                        if (page === 'ellipsis') {
+                          return (
+                            <PaginationItem key={`ellipsis-${index}`}>
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          );
+                        }
                         return (
-                          <PaginationItem key={`ellipsis-${index}`}>
-                            <PaginationEllipsis />
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              isActive={currentPage === page}
+                              onClick={() => handlePageChange(page)}
+                            >
+                              {page}
+                            </PaginationLink>
                           </PaginationItem>
                         );
-                      }
-                      return (
-                        <PaginationItem key={page}>
-                          <PaginationLink
-                            isActive={currentPage === page}
-                            onClick={() => handlePageChange(page)}
-                          >
-                            {page}
-                          </PaginationLink>
-                        </PaginationItem>
-                      );
-                    })}
+                      })}
 
-                    <PaginationItem>
-                      <PaginationNext
-                        disabled={currentPage === totalPages}
-                        onClick={() => handlePageChange(currentPage + 1)}
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
+                      <PaginationItem>
+                        <PaginationNext
+                          disabled={currentPage === totalPages}
+                          onClick={() => handlePageChange(currentPage + 1)}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  )}
                 </Pagination>
               )}
             </div>
@@ -360,6 +393,7 @@ export const App: React.FC = () => {
               }
             }}
             workToEdit={workToEdit}
+            availableAreas={areas}
           />
         )}
 
@@ -368,6 +402,7 @@ export const App: React.FC = () => {
             workId={selectedWorkId}
             refreshKey={detailRefreshKey}
             isOpen={!!selectedWorkId}
+            isSubModalOpen={!!workToEdit || !!workIdToDelete}
             onClose={closeDetail}
             onEdit={editWork}
             onDelete={requestDelete}

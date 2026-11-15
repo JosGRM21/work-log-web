@@ -49,17 +49,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md rounded-[24px] border-white/10 bg-[#080c14] shadow-2xl p-6">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-md max-h-[92dvh] overflow-y-auto overscroll-contain rounded-[24px] border-white/10 bg-[#080c14] shadow-2xl p-5 sm:p-6">
+        <DialogHeader className="pr-8">
           <div className="flex items-center gap-2.5 mb-1">
-            <div className="p-2.5 rounded-xl bg-[#1a73e8]/15 text-[#4285F4] border border-[#1a73e8]/30">
+            <div className="p-2.5 rounded-xl bg-[#1a73e8]/15 text-[#4285F4] border border-[#1a73e8]/30 shrink-0">
               <Lock className="w-5 h-5 stroke-[2.2]" />
             </div>
             <div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-[#4285F4] flex items-center gap-1">
                 <Shield className="w-3 h-3" /> MIBITURVEN S.A.
               </span>
-              <DialogTitle className="text-xl font-medium tracking-tight text-white font-heading">
+              <DialogTitle className="text-lg sm:text-xl font-medium tracking-tight text-white font-heading">
                 Acceso Administrativo
               </DialogTitle>
             </div>
@@ -73,7 +73,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           <div className="grid gap-1.5">
             <Label htmlFor="login-identifier" className="text-xs font-medium text-white">
-              Correo Electrónico o Usuario
+              Correo Electrónico
             </Label>
             <Input
               id="login-identifier"
@@ -116,14 +116,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               variant="outline"
               onClick={onClose}
               disabled={isSubmitting}
-              className="w-full sm:w-auto rounded-full border-white/10 text-[#9aa0a6] hover:text-white hover:bg-white/[0.06]"
+              className="w-full sm:w-auto h-10 sm:h-9 rounded-full border-white/10 text-[#9aa0a6] hover:text-white hover:bg-white/[0.06]"
             >
               Cancelar
             </Button>
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="w-full sm:w-auto bg-[#1a73e8] hover:bg-[#1557b0] text-white font-medium rounded-full shadow-[0_0_15px_rgba(26,115,232,0.35)] transition-all"
+              className="w-full sm:w-auto h-10 sm:h-9 bg-[#1a73e8] hover:bg-[#1557b0] text-white font-medium rounded-full shadow-[0_0_15px_rgba(26,115,232,0.35)] transition-all"
             >
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Iniciar Sesión

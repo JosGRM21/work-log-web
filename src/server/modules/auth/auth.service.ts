@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { prisma as defaultPrisma } from '../../infra/db/client.js';
 import { AppError } from '../../core/errors/app-error.js';
-import { verifyPassword } from './password.js';
+import { verifyPassword, performDummyPasswordCheck } from './password.js';
 import { createSessionToken, revokeSessionToken } from './session.js';
 import type { UserSummary } from '../../../shared/types.js';
 
@@ -23,6 +23,10 @@ export class AuthService {
       throw AppError.badRequest('El identificador y la contraseña son obligatorios.');
     }
 
+    if (identifier.length > 255 || password.length > 128) {
+      throw AppError.unauthorized('Credenciales inválidas. Compruebe el correo y la contraseña.');
+    }
+
     const normalizedEmail = identifier.trim().toLowerCase();
 
     const user = await this.db.user.findUnique({
@@ -30,6 +34,7 @@ export class AuthService {
     });
 
     if (!user) {
+      await performDummyPasswordCheck(password);
       throw AppError.unauthorized('Credenciales inválidas. Compruebe el correo y la contraseña.');
     }
 

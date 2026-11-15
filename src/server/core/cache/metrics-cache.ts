@@ -1,6 +1,7 @@
 export interface CachedMetrics {
   statusGroups: Array<{ status: string; _count: { id: number } }>;
   totalMedia: number;
+  areas: string[];
   timestamp: number;
 }
 
@@ -19,10 +20,12 @@ export function getCachedMetrics(): CachedMetrics | null {
 export function setCachedMetrics(
   statusGroups: Array<{ status: string; _count: { id: number } }>,
   totalMedia: number,
+  areas: string[],
 ): void {
   cachedMetrics = {
     statusGroups,
     totalMedia,
+    areas,
     timestamp: Date.now(),
   };
 }

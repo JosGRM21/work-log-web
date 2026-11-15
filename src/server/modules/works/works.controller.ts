@@ -14,10 +14,7 @@ export class WorkController {
     try {
       const parsedQuery = parseListWorksQuery(req.query as Record<string, unknown>);
       const result = await this.service.listWorks(parsedQuery);
-      res.setHeader(
-        'Cache-Control',
-        'public, max-age=0, must-revalidate, stale-while-revalidate=30',
-      );
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -28,10 +25,7 @@ export class WorkController {
     try {
       const { id } = req.params;
       const result = await this.service.getWorkById(String(id));
-      res.setHeader(
-        'Cache-Control',
-        'public, max-age=0, must-revalidate, stale-while-revalidate=30',
-      );
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
       res.status(200).json(result);
     } catch (error) {
       next(error);

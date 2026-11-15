@@ -4,10 +4,11 @@ export type WorkStatus = (typeof VALID_WORK_STATUSES)[number];
 export const ALLOWED_MEDIA_TYPES = ['image', 'video'] as const;
 export type AllowedMediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 
-const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_REGEX =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000)$/i;
 
 export function isValidUuid(id: string): boolean {
-  return typeof id === 'string' && UUID_V4_REGEX.test(id);
+  return typeof id === 'string' && UUID_REGEX.test(id);
 }
 
 export interface UserSummary {
@@ -30,6 +31,7 @@ export interface MediaCount {
 export interface WorkItemSummary {
   id: string;
   title: string;
+  area: string | null;
   status: WorkStatus;
   reference_date: string;
   next_maintenance_date?: string | null;
@@ -51,6 +53,7 @@ export interface MediaAssetDTO {
 export interface WorkItemDetail {
   id: string;
   title: string;
+  area: string | null;
   description: string | null;
   status: WorkStatus;
   reference_date: string;
@@ -69,11 +72,19 @@ export interface WorkListSummary {
   total_media: number;
 }
 
+export interface WorkListFilteredSummary {
+  completed: number;
+  in_progress: number;
+  pending: number;
+}
+
 export interface ApiPaginationMeta {
   total: number;
   limit: number;
   offset: number;
   summary?: WorkListSummary;
+  filtered_summary?: WorkListFilteredSummary;
+  areas?: string[];
 }
 
 export interface WorkListResponse {

@@ -1,8 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
+import { AppError } from '../../core/errors/app-error.js';
 import {
   mediaService as defaultMediaService,
   type MediaService,
 } from './media.service.js';
+import { MAX_THUMBNAIL_SIZE_BYTES } from './media.validator.js';
 
 export class MediaController {
   constructor(private readonly service: MediaService = defaultMediaService) {}
@@ -42,17 +44,35 @@ export class MediaController {
   async uploadThumbnail(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      const declaredLength = Number(req.headers['content-length']);
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_THUMBNAIL_SIZE_BYTES) {
+        req.resume();
+        throw AppError.payloadTooLarge(
+          'El tamaño de la miniatura excede el límite máximo permitido de 2 MB.',
+        );
       }
+
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+
+      for await (const chunk of req) {
+        const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+        totalBytes += buf.length;
+        if (totalBytes > MAX_THUMBNAIL_SIZE_BYTES) {
+          req.resume();
+          throw AppError.payloadTooLarge(
+            'El tamaño de la miniatura excede el límite máximo permitido de 2 MB.',
+          );
+        }
+        chunks.push(buf);
+      }
+
       const buffer = Buffer.concat(chunks);
       if (buffer.length === 0) {
-        res.status(400).json({ error: { message: 'El contenido de la miniatura está vacío.' } });
-        return;
+        throw AppError.badRequest('El contenido de la miniatura está vacío.');
       }
-      const mimeType = req.headers['content-type'] || 'image/webp';
-      const result = await this.service.uploadThumbnail(String(id), buffer, mimeType);
+
+      const result = await this.service.uploadThumbnail(String(id), buffer);
       res.status(200).json(result);
     } catch (error) {
       next(error);

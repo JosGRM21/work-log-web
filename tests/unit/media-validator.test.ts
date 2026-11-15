@@ -4,9 +4,13 @@ import {
   detectMagicBytes,
   validateMediaQuota,
   validateFileSizeBytes,
+  resolveAllowedMimeType,
   isValidUuid,
 } from '../../src/server/modules/media/media.validator.js';
+import { MediaService } from '../../src/server/modules/media/media.service.js';
+import { errorHandler } from '../../src/server/core/middlewares/error-handler.middleware.js';
 import { AppError } from '../../src/server/core/errors/app-error.js';
+import type { Request, Response, NextFunction } from 'express';
 
 describe('Media Validator (Unit)', () => {
   describe('isValidUuid', () => {
@@ -117,6 +121,228 @@ describe('Media Validator (Unit)', () => {
 
     it('debe lanzar AppError 413 si un video excede 150 MB', () => {
       expect(() => validateFileSizeBytes(150 * 1024 * 1024 + 1, 'video')).toThrowError(AppError);
+    });
+
+    it('debe rechazar tamaños no enteros, negativos o cero con 400 BAD_REQUEST', () => {
+      expect(() => validateFileSizeBytes(0, 'image')).toThrowError(AppError);
+      expect(() => validateFileSizeBytes(-100, 'image')).toThrowError(AppError);
+      expect(() => validateFileSizeBytes(1024.5, 'video')).toThrowError(AppError);
+    });
+  });
+
+  describe('resolveAllowedMimeType', () => {
+    it('debe resolver tipos MIME soportados y rechazar formatos no permitidos como SVG o GIF', () => {
+      expect(resolveAllowedMimeType('image/jpeg')?.extension).toBe('jpg');
+      expect(resolveAllowedMimeType('IMAGE/WEBP')?.extension).toBe('webp');
+      expect(resolveAllowedMimeType('video/mp4')?.mediaType).toBe('video');
+      expect(resolveAllowedMimeType('image/svg+xml')).toBeNull();
+      expect(resolveAllowedMimeType('image/gif')).toBeNull();
+      expect(resolveAllowedMimeType('video/quicktime')).toBeNull();
+    });
+  });
+
+  describe('MediaService.confirmMedia deduplication & cleanup', () => {
+    it('debe rechazar claves duplicadas en confirmMedia y limpiar las claves candidatas en storage', async () => {
+      const workId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      const duplicateKey = `works/${workId}/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11.webp`;
+      const deletedKeys: string[] = [];
+
+      const mockDb = {
+        workItem: {
+          findUnique: async () => ({ id: workId }),
+        },
+      } as unknown as ConstructorParameters<typeof MediaService>[0];
+
+      const mockStorage = {
+        normalizeKey: (k: string) => k,
+        headObject: async () => ({ sizeBytes: 1024 }),
+        deleteObject: async (k: string) => {
+          deletedKeys.push(k);
+        },
+        putObject: async () => ({ key: '', url: '', sizeBytes: 0 }),
+        getUrl: (k: string) => `/uploads/${k}`,
+        listObjects: async () => [],
+      };
+
+      const service = new MediaService(mockDb, mockStorage);
+
+      await expect(
+        service.confirmMedia(workId, [
+          { key: duplicateKey, mimeType: 'image/webp', mediaType: 'image', sizeBytes: 1024 },
+          { key: duplicateKey, mimeType: 'image/webp', mediaType: 'image', sizeBytes: 1024 },
+        ]),
+      ).rejects.toThrowError(/duplicada/);
+
+      expect(deletedKeys).toContain(duplicateKey);
+    });
+
+    it('debe rechazar clave cuya extensión no coincide con el mimeType declarado y limpiar el archivo', async () => {
+      const workId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      const mismatchedKey = `works/${workId}/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22.jpg`;
+      const deletedKeys: string[] = [];
+
+      const mockDb = {
+        workItem: {
+          findUnique: async () => ({ id: workId }),
+        },
+      } as unknown as ConstructorParameters<typeof MediaService>[0];
+
+      const mockStorage = {
+        normalizeKey: (k: string) => k,
+        headObject: async () => ({ sizeBytes: 1024 }),
+        deleteObject: async (k: string) => {
+          deletedKeys.push(k);
+        },
+        putObject: async () => ({ key: '', url: '', sizeBytes: 0 }),
+        getUrl: (k: string) => `/uploads/${k}`,
+        listObjects: async () => [],
+      };
+
+      const service = new MediaService(mockDb, mockStorage);
+
+      await expect(
+        service.confirmMedia(workId, [
+          { key: mismatchedKey, mimeType: 'image/webp', mediaType: 'image', sizeBytes: 1024 },
+        ]),
+      ).rejects.toThrowError(/extensión/i);
+
+      expect(deletedKeys).toContain(mismatchedKey);
+    });
+
+    it('debe preservar todas las claves ya confirmadas y eliminar solo las huérfanas nuevas al fallar por duplicado en BD', async () => {
+      const workId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      const existingKey1 = `works/${workId}/11111111-1111-4111-8111-111111111111.webp`;
+      const existingKey2 = `works/${workId}/22222222-2222-4222-8222-222222222222.webp`;
+      const freshOrphanKey = `works/${workId}/33333333-3333-4333-8333-333333333333.webp`;
+      const deletedKeys: string[] = [];
+
+      const tx = {
+        $queryRaw: async () => [{ id: workId }],
+        mediaAsset: {
+          findMany: async () => [{ filePath: existingKey1 }, { filePath: existingKey2 }],
+        },
+      };
+
+      const mockDb = {
+        workItem: {
+          findUnique: async () => ({ id: workId }),
+        },
+        $transaction: async <T>(fn: (client: typeof tx) => Promise<T>) => fn(tx),
+      } as unknown as ConstructorParameters<typeof MediaService>[0];
+
+      const mockStorage = {
+        normalizeKey: (k: string) => k,
+        headObject: async () => ({ sizeBytes: 1024 }),
+        deleteObject: async (k: string) => {
+          deletedKeys.push(k);
+        },
+        putObject: async () => ({ key: '', url: '', sizeBytes: 0 }),
+        getUrl: (k: string) => `/uploads/${k}`,
+        listObjects: async () => [],
+      };
+
+      const service = new MediaService(mockDb, mockStorage);
+
+      await expect(
+        service.confirmMedia(workId, [
+          { key: existingKey1, mimeType: 'image/webp', mediaType: 'image', sizeBytes: 1024 },
+          { key: existingKey2, mimeType: 'image/webp', mediaType: 'image', sizeBytes: 1024 },
+          { key: freshOrphanKey, mimeType: 'image/webp', mediaType: 'image', sizeBytes: 1024 },
+        ]),
+      ).rejects.toThrowError(/ya fue confirmado/i);
+
+      expect(deletedKeys).toContain(freshOrphanKey);
+      expect(deletedKeys).not.toContain(existingKey1);
+      expect(deletedKeys).not.toContain(existingKey2);
+    });
+  });
+
+  describe('MediaService.deleteMedia concurrency', () => {
+    it('debe mapear error P2025 de Prisma a AppError.notFound (404)', async () => {
+      const mediaId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      const mockDb = {
+        mediaAsset: {
+          findUnique: async () => ({
+            id: mediaId,
+            filePath: `works/${mediaId}/file.webp`,
+          }),
+          delete: async () => {
+            throw Object.assign(new Error('Record to delete does not exist.'), { code: 'P2025' });
+          },
+        },
+      } as unknown as ConstructorParameters<typeof MediaService>[0];
+
+      const mockStorage = {
+        normalizeKey: (k: string) => k,
+        headObject: async () => null,
+        deleteObject: async () => {},
+        putObject: async () => ({ key: '', url: '', sizeBytes: 0 }),
+        getUrl: (k: string) => `/uploads/${k}`,
+        listObjects: async () => [],
+      };
+
+      const service = new MediaService(mockDb, mockStorage);
+
+      await expect(service.deleteMedia(mediaId)).rejects.toMatchObject({
+        statusCode: 404,
+        errorCode: 'NOT_FOUND',
+      });
+    });
+  });
+
+  describe('errorHandler middleware (JSON SyntaxError & 413 PayloadTooLarge)', () => {
+    it('debe convertir SyntaxError de body-parser en 400 BAD_REQUEST', () => {
+      const syntaxErr = Object.assign(new SyntaxError('Unexpected end of JSON input'), {
+        status: 400,
+        body: '{',
+      });
+      let capturedStatus = 0;
+      let capturedBody: unknown = null;
+
+      const res = {
+        status(code: number) {
+          capturedStatus = code;
+          return this;
+        },
+        json(payload: unknown) {
+          capturedBody = payload;
+          return this;
+        },
+      } as unknown as Response;
+
+      errorHandler(syntaxErr, {} as Request, res, (() => {}) as NextFunction);
+
+      expect(capturedStatus).toBe(400);
+      expect(capturedBody).toMatchObject({
+        error: { code: 'BAD_REQUEST' },
+      });
+    });
+
+    it('debe convertir entity.too.large de body-parser en 413 PAYLOAD_TOO_LARGE', () => {
+      const largeErr = Object.assign(new Error('request entity too large'), {
+        status: 413,
+        type: 'entity.too.large',
+      });
+      let capturedStatus = 0;
+      let capturedBody: unknown = null;
+
+      const res = {
+        status(code: number) {
+          capturedStatus = code;
+          return this;
+        },
+        json(payload: unknown) {
+          capturedBody = payload;
+          return this;
+        },
+      } as unknown as Response;
+
+      errorHandler(largeErr, {} as Request, res, (() => {}) as NextFunction);
+
+      expect(capturedStatus).toBe(413);
+      expect(capturedBody).toMatchObject({
+        error: { code: 'PAYLOAD_TOO_LARGE' },
+      });
     });
   });
 });

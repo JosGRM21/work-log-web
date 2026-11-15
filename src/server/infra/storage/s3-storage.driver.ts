@@ -1,6 +1,7 @@
 import {
   S3Client,
   DeleteObjectCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   type ListObjectsV2CommandOutput,
   PutObjectCommand,
@@ -13,7 +14,12 @@ import type {
   PutObjectOptions,
   PutObjectResult,
   StorageObjectInfo,
+  StorageObjectMetadata,
 } from './storage-driver.interface.js';
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 export interface S3DriverConfig {
   bucket: string;
@@ -29,11 +35,13 @@ export class S3StorageDriver implements StorageDriver {
   private readonly bucket: string;
   private readonly endpoint?: string;
   private readonly publicBaseUrl?: string;
+  private readonly bucketPrefixRegex: RegExp;
 
   constructor(config: S3DriverConfig) {
     this.bucket = config.bucket;
     this.endpoint = config.endpoint;
     this.publicBaseUrl = config.publicBaseUrl;
+    this.bucketPrefixRegex = new RegExp(`^/?${escapeRegExp(this.bucket)}/+`);
 
     this.client = new S3Client({
       region: config.region || 'auto',
@@ -43,6 +51,8 @@ export class S3StorageDriver implements StorageDriver {
         secretAccessKey: config.secretAccessKey,
       },
       forcePathStyle: true,
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
   }
 
@@ -50,7 +60,8 @@ export class S3StorageDriver implements StorageDriver {
     let clean = rawKeyOrPath.replace(/\\/g, '/').replace(/^https?:\/\/[^/]+/, '');
     clean = clean
       .replace(/^\/uploads\/+/, '')
-      .replace(new RegExp(`^/?${this.bucket}/+`), '')
+      .replace(/^\/media\/+/, '')
+      .replace(this.bucketPrefixRegex, '')
       .replace(/^\/+/, '');
     return clean;
   }
@@ -109,6 +120,28 @@ export class S3StorageDriver implements StorageDriver {
     );
   }
 
+  async headObject(key: string): Promise<StorageObjectMetadata | null> {
+    const canonicalKey = this.normalizeKey(key);
+    try {
+      const res = await this.client.send(
+        new HeadObjectCommand({
+          Bucket: this.bucket,
+          Key: canonicalKey,
+        }),
+      );
+      return {
+        sizeBytes: res.ContentLength ?? 0,
+        mimeType: res.ContentType,
+      };
+    } catch (error) {
+      const err = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+      if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   getUrl(key: string): string {
     const cleanKey = this.normalizeKey(key);
     if (this.publicBaseUrl) {
@@ -157,17 +190,20 @@ export class S3StorageDriver implements StorageDriver {
   async createPresignedUploadUrl(options: {
     key: string;
     mimeType: string;
-    maxSizeBytes: number;
+    sizeBytes: number;
   }): Promise<{ uploadUrl: string; key: string }> {
     const canonicalKey = this.normalizeKey(options.key);
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: canonicalKey,
       ContentType: options.mimeType,
-      CacheControl: 'public, max-age=31536000, immutable',
+      ContentLength: options.sizeBytes,
     });
 
-    const uploadUrl = await getSignedUrl(this.client, command, { expiresIn: 900 });
+    const uploadUrl = await getSignedUrl(this.client, command, {
+      expiresIn: 900,
+      signableHeaders: new Set(['content-type', 'content-length']),
+    });
 
     return {
       uploadUrl,

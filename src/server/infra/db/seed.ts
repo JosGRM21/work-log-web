@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { prisma } from './client.js';
+import { prisma, pool } from './client.js';
 import { hashPassword } from '../../modules/auth/auth.utils.js';
 
 async function main(): Promise<void> {
@@ -52,6 +52,7 @@ async function main(): Promise<void> {
     data: {
       userId: admin.id,
       title: 'Mantenimiento Preventivo de Bomba de Agua',
+      area: 'Planta de Tratamiento',
       description:
         'Revisión periódica de rodamientos, sellos mecánicos y prueba de presión en línea de impulsión.',
       status: 'pending',
@@ -63,6 +64,7 @@ async function main(): Promise<void> {
     data: {
       userId: admin.id,
       title: 'Fabricación de Portón Corredizo en Acero',
+      area: 'Taller Metalmecánico',
       description:
         'Corte y ensamblaje de tubos estructurales 80x40mm. Fase actual: soldadura de escuadras y riel guía.',
       status: 'in_progress',
@@ -75,6 +77,7 @@ async function main(): Promise<void> {
     data: {
       userId: admin.id,
       title: 'Restauración de Mesa de Roble Clásica',
+      area: 'Taller de Carpintería',
       description:
         'Lijado profundo, tratamiento contra polilla y triple capa de acabado en poliuretano satinado.',
       status: 'completed',
@@ -119,8 +122,9 @@ async function main(): Promise<void> {
 main()
   .catch((error) => {
     console.error('Error durante la ejecución del seed:', error);
-    process.exit(1);
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });

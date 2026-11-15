@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import { app } from './app.js';
 import { prisma, pool } from './infra/db/client.js';
+import { assertSessionSecretConfigured } from './modules/auth/session.js';
+
+assertSessionSecretConfigured();
 
 const PORT = Number(process.env.PORT) || 3000;
 

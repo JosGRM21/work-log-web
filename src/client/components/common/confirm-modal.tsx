@@ -42,12 +42,17 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           <AlertDialogDescription>{message}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isLoading} onClick={onClose}>
+          <AlertDialogCancel
+            disabled={isLoading}
+            onClick={onClose}
+            className="h-10 sm:h-9 rounded-full"
+          >
             {cancelText}
           </AlertDialogCancel>
           <AlertDialogAction
             variant={isDestructive ? 'destructive' : 'default'}
             disabled={isLoading}
+            className="h-10 sm:h-9 rounded-full"
             onClick={(e) => {
               e.preventDefault();
               onConfirm();

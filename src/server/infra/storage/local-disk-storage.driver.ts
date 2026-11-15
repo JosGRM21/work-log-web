@@ -8,22 +8,29 @@ import type {
   PutObjectOptions,
   PutObjectResult,
   StorageObjectInfo,
+  StorageObjectMetadata,
 } from './storage-driver.interface.js';
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 export class LocalDiskStorageDriver implements StorageDriver {
   private readonly uploadDir: string;
   private readonly publicUrlPrefix: string;
+  private readonly prefixRegex: RegExp;
 
   constructor(uploadDir = './uploads', publicUrlPrefix = '/uploads') {
     this.uploadDir = path.resolve(process.cwd(), uploadDir);
     this.publicUrlPrefix = publicUrlPrefix.replace(/\/+$/, '');
+    this.prefixRegex = new RegExp(`^${escapeRegExp(this.publicUrlPrefix)}/+`);
   }
 
   normalizeKey(rawKeyOrPath: string): string {
     return rawKeyOrPath
       .replace(/\\/g, '/')
       .replace(/^https?:\/\/[^/]+/, '')
-      .replace(new RegExp(`^${this.publicUrlPrefix}/+`), '')
+      .replace(this.prefixRegex, '')
       .replace(/^\/+/, '');
   }
 
@@ -80,14 +87,30 @@ export class LocalDiskStorageDriver implements StorageDriver {
     }
   }
 
+  async headObject(key: string): Promise<StorageObjectMetadata | null> {
+    const filePath = this.resolveSafePath(key);
+    try {
+      const stats = await stat(filePath);
+      if (!stats.isFile()) return null;
+      return {
+        sizeBytes: Number(stats.size),
+      };
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'ENOENT') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   getUrl(key: string): string {
     const cleanKey = this.normalizeKey(key);
     return `${this.publicUrlPrefix}/${cleanKey}`;
   }
 
   async listObjects(prefix: string): Promise<StorageObjectInfo[]> {
-    const cleanPrefix = this.normalizeKey(prefix);
-    const targetDir = path.resolve(this.uploadDir, cleanPrefix);
+    const targetDir = this.resolveSafePath(prefix);
 
     const results: StorageObjectInfo[] = [];
 

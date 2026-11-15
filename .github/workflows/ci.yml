@@ -52,7 +52,7 @@ jobs:
         run: |
           npx prisma generate
           npx prisma migrate deploy
-          npx tsx src/server/db/seed.ts
+          npm run db:seed
 
       - name: Run Test Suite (Unit & Integration)
         env:

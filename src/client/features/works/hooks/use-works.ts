@@ -5,10 +5,12 @@ import type {
   WorkItemDetail,
   WorkStatus,
   WorkListSummary,
+  WorkListFilteredSummary,
 } from '@shared/types.js';
 
 export interface UseWorksOptions {
   initialStatus?: WorkStatus | 'all';
+  initialArea?: string | 'all';
   initialOrder?: 'desc' | 'asc';
   limit?: number;
 }
@@ -17,6 +19,8 @@ interface CachedResponse {
   data: WorkItemSummary[];
   total: number;
   summary?: WorkListSummary;
+  filteredSummary?: WorkListFilteredSummary;
+  areas?: string[];
   timestamp: number;
 }
 
@@ -50,11 +54,18 @@ export function useWorks(options: UseWorksOptions = {}) {
   const [works, setWorks] = useState<WorkItemSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<WorkListSummary | undefined>(undefined);
+  const [filteredSummary, setFilteredSummary] = useState<WorkListFilteredSummary | undefined>(
+    undefined,
+  );
+  const [areas, setAreas] = useState<string[]>([]);
   const [offset, setOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilterState] = useState<WorkStatus | 'all'>(
     options.initialStatus ?? 'all',
+  );
+  const [areaFilter, setAreaFilterState] = useState<string | 'all'>(
+    options.initialArea ?? 'all',
   );
   const [order, setOrderState] = useState<'desc' | 'asc'>(options.initialOrder ?? 'desc');
 
@@ -71,6 +82,11 @@ export function useWorks(options: UseWorksOptions = {}) {
     setStatusFilterState(nextStatus);
   }, []);
 
+  const setAreaFilter = useCallback((nextArea: string | 'all') => {
+    setOffset(0);
+    setAreaFilterState(nextArea);
+  }, []);
+
   const setOrder = useCallback((nextOrder: 'desc' | 'asc') => {
     setOffset(0);
     setOrderState(nextOrder);
@@ -78,7 +94,7 @@ export function useWorks(options: UseWorksOptions = {}) {
 
   const fetchWorks = useCallback(
     async (bypassCache = false) => {
-      const cacheKey = `${statusFilter}:${order}:${limit}:${offset}`;
+      const cacheKey = `${statusFilter}:${areaFilter}:${order}:${limit}:${offset}`;
       const cached = catalogCache.get(cacheKey);
       const isFresh = cached && Date.now() - cached.timestamp < CACHE_TTL_MS;
 
@@ -89,11 +105,17 @@ export function useWorks(options: UseWorksOptions = {}) {
         if (cached.summary) {
           setSummary(cached.summary);
         }
+        setFilteredSummary(cached.filteredSummary);
+        if (cached.areas) {
+          setAreas(cached.areas);
+        }
         setIsLoading(false);
         setError(null);
 
-        // Si la caché está fresca, no necesitamos llamada a red
+        // Si la caché está fresca, abortar cualquier petición previa en vuelo y retornar
         if (isFresh) {
+          abortControllerRef.current?.abort();
+          abortControllerRef.current = null;
           return;
         }
       } else {
@@ -111,23 +133,37 @@ export function useWorks(options: UseWorksOptions = {}) {
         const response = await worksApi.list(
           {
             status: statusFilter,
+            area: areaFilter,
             order,
             limit,
             offset,
           },
           abortController.signal,
+          bypassCache ? 'no-store' : undefined,
         );
+
+        if (response.data.length === 0 && response.meta.total > 0 && offset > 0) {
+          const fallbackOffset = Math.max(0, Math.floor((response.meta.total - 1) / limit) * limit);
+          setOffset(fallbackOffset);
+          return;
+        }
 
         catalogCache.set(cacheKey, {
           data: response.data,
           total: response.meta.total,
           summary: response.meta.summary,
+          filteredSummary: response.meta.filtered_summary,
+          areas: response.meta.areas,
           timestamp: Date.now(),
         });
         setWorks(response.data);
         setTotal(response.meta.total);
         if (response.meta.summary) {
           setSummary(response.meta.summary);
+        }
+        setFilteredSummary(response.meta.filtered_summary);
+        if (response.meta.areas) {
+          setAreas(response.meta.areas);
         }
       } catch (err) {
         if ((err as Error).name === 'AbortError') {
@@ -140,7 +176,7 @@ export function useWorks(options: UseWorksOptions = {}) {
         }
       }
     },
-    [statusFilter, order, limit, offset],
+    [statusFilter, areaFilter, order, limit, offset],
   );
 
   useEffect(() => {
@@ -161,6 +197,8 @@ export function useWorks(options: UseWorksOptions = {}) {
     works,
     total,
     summary,
+    filteredSummary,
+    areas,
     limit,
     offset,
     setOffset,
@@ -168,6 +206,8 @@ export function useWorks(options: UseWorksOptions = {}) {
     error,
     statusFilter,
     setStatusFilter,
+    areaFilter,
+    setAreaFilter,
     order,
     setOrder,
     refetch,

@@ -1,9 +1,13 @@
-import type { User } from '@prisma/client';
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  fullName: string;
+}
 
 declare global {
   namespace Express {
     interface Request {
-      user?: Omit<User, 'passwordHash'>;
+      user?: AuthenticatedUser;
     }
   }
 }

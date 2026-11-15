@@ -33,6 +33,9 @@ const MAX_VIDEO_BYTES = 150 * 1024 * 1024; // 150 MB (RNF-STOR-01)
 const MAX_IMAGES_ALLOWED = 20; // RN-03
 const MAX_VIDEOS_ALLOWED = 4; // RN-03
 
+const ALLOWED_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const ALLOWED_VIDEO_MIMES = new Set(['video/mp4', 'video/webm']);
+
 interface PresignResponse {
   directUpload: boolean;
   uploads?: Array<{
@@ -112,7 +115,7 @@ async function compressVideoIfNeeded(
     return file;
   }
 
-  let originalCodec: string | null | undefined;
+  let isNativelyPlayable = file.type.toLowerCase() === 'video/webm';
 
   try {
     const {
@@ -131,99 +134,107 @@ async function compressVideoIfNeeded(
       formats: ALL_FORMATS,
     });
 
-    const videoTrack = await input.getPrimaryVideoTrack();
-    if (!videoTrack) {
-      return file;
-    }
-
-    const width = (await videoTrack.getDisplayWidth?.()) ?? videoTrack.displayWidth ?? 1280;
-    const height = (await videoTrack.getDisplayHeight?.()) ?? videoTrack.displayHeight ?? 720;
-    const codec = (await videoTrack.getCodec?.()) ?? videoTrack.codec;
-    originalCodec = codec;
-
-    const canDecodeSource = await videoTrack.canDecode?.();
-    if (canDecodeSource === false && codec !== 'avc') {
-      throw new Error(
-        `El video "${file.name}" está en formato (${codec || 'no reconocido'}) que no puede ser decodificado por el hardware de este equipo. Por favor, sube un video en formato estándar H.264 o realiza la subida desde un equipo con aceleración por hardware.`,
-      );
-    }
-
-    // Si el video ya es pequeño (<= 3 MB) Y ya está en H.264 (avc) con dimensiones <= 1280p, conservarlo
-    const isAlreadyCompatibleH264 = codec === 'avc' && width <= 1280 && height <= 1280;
-    if (file.size <= 3 * 1024 * 1024 && isAlreadyCompatibleH264) {
-      return file;
-    }
-
-    // Redimensionar al lado mayor máximo 1280 (720p HD) asegurando dimensiones pares para H.264
-    const maxDimension = 1280;
-    let targetWidth = width;
-    let targetHeight = height;
-
-    if (width > maxDimension || height > maxDimension) {
-      if (width > height) {
-        targetWidth = maxDimension;
-        targetHeight = Math.round((height * maxDimension) / width);
-      } else {
-        targetHeight = maxDimension;
-        targetWidth = Math.round((width * maxDimension) / height);
+    try {
+      const videoTrack = await input.getPrimaryVideoTrack();
+      if (!videoTrack) {
+        return file;
       }
-    }
 
-    targetWidth = Math.max(2, targetWidth - (targetWidth % 2));
-    targetHeight = Math.max(2, targetHeight - (targetHeight % 2));
+      const width = (await videoTrack.getDisplayWidth?.()) ?? videoTrack.displayWidth ?? 1280;
+      const height = (await videoTrack.getDisplayHeight?.()) ?? videoTrack.displayHeight ?? 720;
+      const codec = (await videoTrack.getCodec?.()) ?? videoTrack.codec;
+      isNativelyPlayable = isNativelyPlayable || codec === 'avc';
 
-    const targetBuffer = new BufferTarget();
-    const output = new Output({
-      format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
-      target: targetBuffer,
-    });
-
-    const conversion = await Conversion.init({
-      input,
-      output,
-      video: {
-        codec: 'avc', // Forzar siempre H.264 para compatibilidad universal en navegadores
-        width: targetWidth,
-        height: targetHeight,
-        fit: 'contain',
-        frameRate: 30,
-        bitrate: QUALITY_MEDIUM,
-        forceTranscode: true, // Evita que HEVC se copie directo sin recodificar
-      },
-      audio: {
-        codec: 'aac',
-        bitrate: 128_000,
-      },
-      showWarnings: false,
-    });
-
-    if (!conversion.isValid) {
-      console.warn('Conversión no válida para este video:', conversion.discardedTracks);
-      if (codec !== 'avc') {
+      const canDecodeSource = await videoTrack.canDecode?.();
+      if (canDecodeSource === false && !isNativelyPlayable) {
         throw new Error(
-          `No se pudo transcodificar el video "${file.name}" a H.264 universal: el códec de origen no es compatible con el hardware de este navegador.`,
+          `El video "${file.name}" está en formato (${codec || 'no reconocido'}) que no puede ser decodificado por el hardware de este equipo. Por favor, sube un video en formato estándar H.264 o realiza la subida desde un equipo con aceleración por hardware.`,
         );
       }
-      return file;
-    }
 
-    if (onProgress) {
-      conversion.onProgress = (prog: number) => onProgress(Math.round(prog * 100));
-    }
+      // Si el video ya es pequeño (<= 3 MB) Y ya está en H.264 (avc) con dimensiones <= 1280p, conservarlo
+      const isAlreadyCompatibleH264 = codec === 'avc' && width <= 1280 && height <= 1280;
+      if (file.size <= 3 * 1024 * 1024 && isAlreadyCompatibleH264) {
+        return file;
+      }
 
-    await conversion.execute();
+      // Redimensionar al lado mayor máximo 1280 (720p HD) asegurando dimensiones pares para H.264
+      const maxDimension = 1280;
+      let targetWidth = width;
+      let targetHeight = height;
 
-    const buffer = targetBuffer.buffer;
-    if (buffer && buffer.byteLength > 0) {
-      // Si el video original no era H.264 (ej. HEVC), usamos el transcodificado aunque pese similar
-      // para garantizar que el video se vea y no solo se escuche el audio.
-      if (codec !== 'avc' || buffer.byteLength < file.size) {
-        const newName = file.name.replace(/\.[^.]+$/, '') + '.mp4';
-        return new File([buffer], newName, { type: 'video/mp4' });
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          targetWidth = maxDimension;
+          targetHeight = Math.round((height * maxDimension) / width);
+        } else {
+          targetHeight = maxDimension;
+          targetWidth = Math.round((width * maxDimension) / height);
+        }
+      }
+
+      targetWidth = Math.max(2, targetWidth - (targetWidth % 2));
+      targetHeight = Math.max(2, targetHeight - (targetHeight % 2));
+
+      const targetBuffer = new BufferTarget();
+      const output = new Output({
+        format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
+        target: targetBuffer,
+      });
+
+      const conversion = await Conversion.init({
+        input,
+        output,
+        video: {
+          codec: 'avc', // Forzar siempre H.264 para compatibilidad universal en navegadores
+          width: targetWidth,
+          height: targetHeight,
+          fit: 'contain',
+          frameRate: 30,
+          bitrate: QUALITY_MEDIUM,
+          forceTranscode: true, // Evita que HEVC se copie directo sin recodificar
+        },
+        audio: {
+          codec: 'aac',
+          bitrate: 128_000,
+        },
+        showWarnings: false,
+      });
+
+      if (!conversion.isValid) {
+        console.warn('Conversión no válida para este video:', conversion.discardedTracks);
+        if (!isNativelyPlayable) {
+          throw new Error(
+            `No se pudo transcodificar el video "${file.name}" a H.264 universal: el códec de origen no es compatible con el hardware de este navegador.`,
+          );
+        }
+        return file;
+      }
+
+      if (onProgress) {
+        conversion.onProgress = (prog: number) => onProgress(Math.round(prog * 100));
+      }
+
+      await conversion.execute();
+
+      const buffer = targetBuffer.buffer;
+      if (buffer && buffer.byteLength > 0) {
+        // Si el video original no era H.264 (ej. HEVC), usamos el transcodificado aunque pese similar
+        // para garantizar que el video se vea y no solo se escuche el audio.
+        if (codec !== 'avc' || buffer.byteLength < file.size) {
+          const newName = file.name.replace(/\.[^.]+$/, '') + '.mp4';
+          return new File([buffer], newName, { type: 'video/mp4' });
+        }
+      }
+    } finally {
+      try {
+        input.dispose();
+      } catch {
+        // Ignorar
       }
     }
   } catch (err) {
-    if (originalCodec !== 'avc' && err instanceof Error) {
+    if (!isNativelyPlayable && err instanceof Error) {
       throw err;
     }
     console.warn('Compresión de video omitida por fallo o códec no soportado:', err);
@@ -437,7 +448,6 @@ async function generateThumbnailBlob(file: File): Promise<Blob | null> {
   } catch {
     return null;
   }
-  return null;
 }
 
 function uploadToPresignedUrl(
@@ -517,8 +527,8 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
 
     for (const file of combinedFiles) {
       const type = file.type.toLowerCase();
-      const isImg = type.startsWith('image/');
-      const isVid = type.startsWith('video/');
+      const isImg = ALLOWED_IMAGE_MIMES.has(type);
+      const isVid = ALLOWED_VIDEO_MIMES.has(type);
 
       if (!isImg && !isVid) {
         setErrorMessage(
@@ -562,21 +572,29 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
 
     setIsProcessingFiles(true);
     setProcessingStatus('Preparando archivos...');
+    const processed: StagedFile[] = [];
+    const revokeProcessedUrls = () => {
+      for (const item of processed) {
+        if (item.previewUrl) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      }
+    };
+
     try {
-      const processed: StagedFile[] = [];
       for (const file of newFiles) {
-        const isImg = file.type.toLowerCase().startsWith('image/');
-        const isVid = file.type.toLowerCase().startsWith('video/');
+        const mime = file.type.toLowerCase();
+        const isImg = ALLOWED_IMAGE_MIMES.has(mime);
+        const isVid = ALLOWED_VIDEO_MIMES.has(mime);
 
         if (isImg) {
           setProcessingStatus(`Optimizando imagen "${file.name}"...`);
           const compressed = await compressImageIfNeeded(file);
           if (compressed.size > MAX_IMAGE_BYTES) {
+            revokeProcessedUrls();
             setErrorMessage(
               `"${compressed.name}" supera el límite máximo de 10 MB para imágenes (RNF-STOR-01).`,
             );
-            setIsProcessingFiles(false);
-            setProcessingStatus(null);
             return;
           }
           const thumbBlob = await generateThumbnailBlob(compressed);
@@ -592,6 +610,13 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           const compressed = await compressVideoIfNeeded(file, (pct) => {
             setProcessingStatus(`Comprimiendo video "${file.name}" (${pct}%)...`);
           });
+          if (compressed.size > MAX_VIDEO_BYTES) {
+            revokeProcessedUrls();
+            setErrorMessage(
+              `"${compressed.name}" supera el límite máximo de 150 MB para videos (RNF-STOR-01).`,
+            );
+            return;
+          }
           setProcessingStatus(`Extrayendo miniatura de "${file.name}"...`);
           const posterBlob = await extractVideoPosterBlob(compressed);
           const previewUrl = posterBlob ? URL.createObjectURL(posterBlob) : null;
@@ -606,6 +631,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
 
       setStagedFiles((prev) => [...prev, ...processed]);
     } catch (err) {
+      revokeProcessedUrls();
       setErrorMessage('Error al procesar los archivos seleccionados: ' + (err as Error).message);
     } finally {
       setIsProcessingFiles(false);
@@ -657,83 +683,84 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
     setErrorMessage(null);
 
     try {
-      // 1. Intentar subida directa vía Presigned URLs (S3/Cloudflare R2)
-      let directUploadDone = false;
-      try {
-        const presignRes = await apiClient.post<PresignResponse>(`/works/${workId}/media/presign`, {
-          files: stagedFiles.map((s) => ({
-            filename: s.file.name,
-            mimeType: s.file.type,
-            sizeBytes: s.file.size,
-            thumbSizeBytes: s.thumbBlob ? s.thumbBlob.size : undefined,
-          })),
-        });
+      // 1. Consultar si el backend soporta subida directa vía Presigned URLs (S3/Cloudflare R2)
+      const presignRes = await apiClient.post<PresignResponse>(`/works/${workId}/media/presign`, {
+        files: stagedFiles.map((s) => ({
+          filename: s.file.name,
+          mimeType: s.file.type,
+          sizeBytes: s.file.size,
+          thumbSizeBytes: s.thumbBlob ? s.thumbBlob.size : undefined,
+        })),
+      });
 
-        if (
-          presignRes?.directUpload &&
-          Array.isArray(presignRes.uploads) &&
-          presignRes.uploads.length === stagedFiles.length
-        ) {
-          const totalFiles = stagedFiles.length;
-          const progressMap = new Array<number>(totalFiles).fill(0);
+      if (
+        presignRes?.directUpload &&
+        Array.isArray(presignRes.uploads) &&
+        presignRes.uploads.length === stagedFiles.length
+      ) {
+        const totalBytes = stagedFiles.reduce(
+          (acc, s) => acc + s.file.size + (s.thumbBlob ? s.thumbBlob.size : 0),
+          0,
+        );
+        const mainUploadedBytes = new Array<number>(stagedFiles.length).fill(0);
+        const thumbUploadedBytes = new Array<number>(stagedFiles.length).fill(0);
 
-          await Promise.all(
-            stagedFiles.map(async (staged, idx) => {
-              const uploadInfo = presignRes.uploads![idx];
-              const uploads: Promise<void>[] = [
+        const updateAggregateProgress = () => {
+          if (totalBytes <= 0) {
+            setUploadProgress(100);
+            return;
+          }
+          const uploaded =
+            mainUploadedBytes.reduce((a, b) => a + b, 0) +
+            thumbUploadedBytes.reduce((a, b) => a + b, 0);
+          setUploadProgress(Math.min(100, Math.round((uploaded / totalBytes) * 100)));
+        };
+
+        await Promise.all(
+          stagedFiles.map(async (staged, idx) => {
+            const uploadInfo = presignRes.uploads![idx];
+            const thumbBlob = staged.thumbBlob;
+            const uploads: Promise<void>[] = [
+              uploadToPresignedUrl(
+                uploadInfo.uploadUrl,
+                staged.file,
+                uploadInfo.mimeType,
+                (percent) => {
+                  mainUploadedBytes[idx] = (percent / 100) * staged.file.size;
+                  updateAggregateProgress();
+                },
+              ),
+            ];
+
+            if (uploadInfo.thumbUploadUrl && thumbBlob) {
+              uploads.push(
                 uploadToPresignedUrl(
-                  uploadInfo.uploadUrl,
-                  staged.file,
-                  uploadInfo.mimeType,
+                  uploadInfo.thumbUploadUrl,
+                  thumbBlob,
+                  'image/webp',
                   (percent) => {
-                    progressMap[idx] = percent;
-                    const totalPercent = Math.round(
-                      progressMap.reduce((a, b) => a + b, 0) / totalFiles,
-                    );
-                    setUploadProgress(totalPercent);
+                    thumbUploadedBytes[idx] = (percent / 100) * thumbBlob.size;
+                    updateAggregateProgress();
                   },
                 ),
-              ];
+              );
+            }
 
-              if (uploadInfo.thumbUploadUrl) {
-                uploads.push(
-                  (async () => {
-                    const thumbBlob =
-                      staged.thumbBlob || (await generateThumbnailBlob(staged.file));
-                    if (thumbBlob) {
-                      await uploadToPresignedUrl(
-                        uploadInfo.thumbUploadUrl!,
-                        thumbBlob,
-                        'image/webp',
-                      );
-                    }
-                  })(),
-                );
-              }
+            await Promise.all(uploads);
+          }),
+        );
 
-              await Promise.all(uploads);
-            }),
-          );
-
-          // Confirmar registros en Prisma
-          await apiClient.post(`/works/${workId}/media/confirm`, {
-            files: presignRes.uploads.map((u) => ({
-              key: u.key,
-              mimeType: u.mimeType,
-              mediaType: u.mediaType,
-              sizeBytes: u.sizeBytes,
-            })),
-          });
-
-          directUploadDone = true;
-        }
-      } catch {
-        // Fallback al endpoint multipart si el storage driver es local o falla el presign
-        directUploadDone = false;
-      }
-
-      // 2. Fallback a subida multipart tradicional (Local storage)
-      if (!directUploadDone) {
+        // Confirmar registros en Prisma
+        await apiClient.post(`/works/${workId}/media/confirm`, {
+          files: presignRes.uploads.map((u) => ({
+            key: u.key,
+            mimeType: u.mimeType,
+            mediaType: u.mediaType,
+            sizeBytes: u.sizeBytes,
+          })),
+        });
+      } else {
+        // 2. Subida multipart tradicional (Local storage)
         const formData = new FormData();
         stagedFiles.forEach((s) => {
           formData.append('files', s.file);
@@ -750,12 +777,12 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           }>;
         }>(`/works/${workId}/media`, formData);
 
-        // Subir miniaturas físicas (posters) para videos u otros medios que tengan thumbBlob local
+        // Subir miniaturas físicas (posters) para videos que tengan thumbBlob local
         if (uploadRes?.uploaded && Array.isArray(uploadRes.uploaded)) {
           await Promise.allSettled(
             uploadRes.uploaded.map(async (asset, idx) => {
               const staged = stagedFiles[idx];
-              if (staged?.thumbBlob) {
+              if (asset.type === 'video' && staged?.thumbBlob) {
                 try {
                   await apiClient.put(`/media/${asset.id}/thumbnail`, staged.thumbBlob, {
                     headers: { 'Content-Type': 'image/webp' },
@@ -792,25 +819,25 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
     <div className="flex flex-col gap-4">
       {/* Indicadores de Cuotas y Límites Reglamentarios */}
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.08]">
+        <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.08]">
           <span className="text-[#9aa0a6] flex items-center gap-1.5 font-medium">
             <ImageIcon className="w-3.5 h-3.5 text-[#4285F4]" />
             Fotos
           </span>
-          <span className="font-semibold text-white">
-            {currentImageCount} / {MAX_IMAGES_ALLOWED}
-            <span className="text-[10px] text-[#9aa0a6] ml-1">({availableImages} disp.)</span>
+          <span className="font-semibold text-white tabular-nums">
+            {currentImageCount} / {MAX_IMAGES_ALLOWED}{' '}
+            <span className="text-[10px] text-[#9aa0a6] font-normal">({availableImages} disp.)</span>
           </span>
         </div>
 
-        <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.08]">
+        <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.08]">
           <span className="text-[#9aa0a6] flex items-center gap-1.5 font-medium">
             <VideoIcon className="w-3.5 h-3.5 text-cyan-400" />
             Videos
           </span>
-          <span className="font-semibold text-white">
-            {currentVideoCount} / {MAX_VIDEOS_ALLOWED}
-            <span className="text-[10px] text-[#9aa0a6] ml-1">({availableVideos} disp.)</span>
+          <span className="font-semibold text-white tabular-nums">
+            {currentVideoCount} / {MAX_VIDEOS_ALLOWED}{' '}
+            <span className="text-[10px] text-[#9aa0a6] font-normal">({availableVideos} disp.)</span>
           </span>
         </div>
       </div>
@@ -829,7 +856,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           }
         }}
         className={cn(
-          'relative flex flex-col items-center justify-center p-6 rounded-2xl cursor-pointer text-center transition-all duration-200 border-2 border-dashed group select-none',
+          'relative flex flex-col items-center justify-center p-4 sm:p-6 rounded-2xl cursor-pointer text-center transition-all duration-200 border-2 border-dashed group select-none touch-manipulation',
           isProcessingFiles || isUploading ? 'opacity-60 pointer-events-none' : '',
           isDragOver
             ? 'border-[#4285F4] bg-[#1a73e8]/10 shadow-[0_0_25px_rgba(66,133,244,0.2)]'
@@ -838,7 +865,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
       >
         <div
           className={cn(
-            'w-12 h-12 rounded-2xl flex items-center justify-center mb-3 transition-transform duration-200 group-hover:scale-110',
+            'w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center mb-2.5 sm:mb-3 transition-transform duration-200 group-hover:scale-110',
             isDragOver
               ? 'bg-[#1a73e8] text-white shadow-lg'
               : 'bg-[#1a73e8]/15 border border-[#1a73e8]/30 text-[#8ab4f8]',
@@ -848,8 +875,11 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
         </div>
 
         <p className="text-xs sm:text-sm font-medium text-white group-hover:text-[#8ab4f8] transition-colors">
-          Arrastra fotos o videos aquí, o{' '}
-          <span className="text-[#4285F4] underline underline-offset-2">selecciónalos</span>
+          <span className="sm:hidden">Toca para elegir fotos o videos</span>
+          <span className="hidden sm:inline">
+            Arrastra fotos o videos aquí, o{' '}
+            <span className="text-[#4285F4] underline underline-offset-2">selecciónalos</span>
+          </span>
         </p>
 
         <p className="text-[11px] text-[#9aa0a6] mt-1 max-w-xs leading-normal">
@@ -930,8 +960,8 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
                       )}
                     </div>
 
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-medium text-white truncate max-w-[190px] sm:max-w-[260px]">
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="font-medium text-white truncate">
                         {item.file.name}
                       </span>
                       <span className="text-[10px] text-[#9aa0a6] tabular-nums">
@@ -943,25 +973,26 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
                   <button
                     type="button"
                     onClick={() => handleRemoveStagedFile(item.id)}
-                    className="p-1 rounded-lg text-[#9aa0a6] hover:text-destructive hover:bg-white/10 transition-colors"
+                    className="h-9 w-9 sm:h-7 sm:w-7 flex items-center justify-center shrink-0 rounded-lg text-[#9aa0a6] hover:text-destructive hover:bg-white/10 transition-colors"
                     title="Remover archivo de la cola"
+                    aria-label="Remover archivo de la cola"
                     disabled={isUploading || isProcessingFiles}
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   </button>
                 </div>
               );
             })}
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
+          <div className="grid grid-cols-2 sm:flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={handleClearAll}
               disabled={isUploading || isProcessingFiles}
-              className="h-8 text-xs font-medium rounded-full border-white/10 text-[#9aa0a6] hover:text-white hover:bg-white/10"
+              className="h-10 sm:h-8 text-xs font-medium rounded-full border-white/10 text-[#9aa0a6] hover:text-white hover:bg-white/10"
             >
               Descartar Todo
             </Button>
@@ -971,7 +1002,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
               size="sm"
               onClick={handleUploadSubmit}
               disabled={isUploading || isProcessingFiles}
-              className="h-8 text-xs font-medium rounded-full bg-[#1a73e8] hover:bg-[#1557b0] text-white shadow-[0_0_15px_rgba(26,115,232,0.35)] gap-1.5 px-4"
+              className="h-10 sm:h-8 text-xs font-medium rounded-full bg-[#1a73e8] hover:bg-[#1557b0] text-white shadow-[0_0_15px_rgba(26,115,232,0.35)] gap-1.5 px-4"
             >
               {isUploading ? (
                 <>

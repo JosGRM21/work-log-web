@@ -1,9 +1,25 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createSessionToken, verifySessionToken } from '../../src/server/modules/auth/session.js';
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import {
+  createSessionToken,
+  verifySessionToken,
+  getSessionCookieOptions,
+} from '../../src/server/modules/auth/session.js';
 
 describe('Session Utility (Unit)', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalSameSite = process.env.SESSION_COOKIE_SAME_SITE;
+  const originalSecure = process.env.SESSION_COOKIE_SECURE;
+
   beforeAll(() => {
     process.env.SESSION_SECRET = 'clave_de_prueba_segura_de_al_menos_32_caracteres_vitest';
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+    if (originalSameSite === undefined) delete process.env.SESSION_COOKIE_SAME_SITE;
+    else process.env.SESSION_COOKIE_SAME_SITE = originalSameSite;
+    if (originalSecure === undefined) delete process.env.SESSION_COOKIE_SECURE;
+    else process.env.SESSION_COOKIE_SECURE = originalSecure;
   });
 
   it('debe generar y verificar un token de sesión legítimo', () => {
@@ -32,5 +48,26 @@ describe('Session Utility (Unit)', () => {
   it('debe rechazar tokens con formato malformado', () => {
     expect(verifySessionToken('')).toBeNull();
     expect(verifySessionToken('token-invalido-sin-firma')).toBeNull();
+  });
+
+  it('debe usar SameSite=None y Secure en producción por defecto para soportar frontends cross-site (Cloudflare Pages)', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.SESSION_COOKIE_SAME_SITE;
+    delete process.env.SESSION_COOKIE_SECURE;
+
+    const opts = getSessionCookieOptions();
+    expect(opts.sameSite).toBe('none');
+    expect(opts.secure).toBe(true);
+    expect(opts.httpOnly).toBe(true);
+  });
+
+  it('debe usar SameSite=Lax fuera de producción y permitir override por SESSION_COOKIE_SAME_SITE', () => {
+    process.env.NODE_ENV = 'test';
+    delete process.env.SESSION_COOKIE_SAME_SITE;
+    expect(getSessionCookieOptions().sameSite).toBe('lax');
+
+    process.env.NODE_ENV = 'production';
+    process.env.SESSION_COOKIE_SAME_SITE = 'lax';
+    expect(getSessionCookieOptions().sameSite).toBe('lax');
   });
 });

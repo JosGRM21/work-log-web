@@ -9,11 +9,13 @@ export interface ListWorksParams {
   limit?: number;
   offset?: number;
   status?: WorkStatus | 'all';
+  area?: string | 'all';
   order?: 'asc' | 'desc';
 }
 
 export interface CreateWorkInput {
   title: string;
+  area?: string | null;
   description?: string | null;
   status?: WorkStatus;
   reference_date?: string;
@@ -24,6 +26,7 @@ export interface CreateWorkInput {
 
 export interface UpdateWorkInput {
   title?: string;
+  area?: string | null;
   description?: string | null;
   status?: WorkStatus;
   reference_date?: string;
@@ -33,26 +36,33 @@ export interface UpdateWorkInput {
 }
 
 export const worksApi = {
-  list: (params: ListWorksParams = {}, signal?: AbortSignal) => {
+  list: (params: ListWorksParams = {}, signal?: AbortSignal, cache?: RequestCache) => {
     const query = new URLSearchParams();
     if (params.limit !== undefined) query.set('limit', String(params.limit));
     if (params.offset !== undefined) query.set('offset', String(params.offset));
     if (params.status && params.status !== 'all') query.set('status', params.status);
+    if (params.area && params.area !== 'all') query.set('area', params.area);
     if (params.order) query.set('order', params.order);
 
     const queryString = query.toString();
     const endpoint = queryString ? `/works?${queryString}` : '/works';
-    return apiClient.get<WorkListResponse>(endpoint, { signal });
+    return apiClient.get<WorkListResponse>(endpoint, {
+      signal,
+      ...(cache ? { cache } : {}),
+    });
   },
 
-  getById: (id: string, signal?: AbortSignal) =>
-    apiClient.get<WorkItemDetail>(`/works/${id}`, { signal }),
+  getById: (id: string, signal?: AbortSignal, cache?: RequestCache) =>
+    apiClient.get<WorkItemDetail>(`/works/${id}`, {
+      signal,
+      ...(cache ? { cache } : {}),
+    }),
 
   create: (data: CreateWorkInput) =>
-    apiClient.post<{ id: string; title: string }>('/works', data),
+    apiClient.post<{ id: string; title: string; area: string | null }>('/works', data),
 
   update: (id: string, data: UpdateWorkInput) =>
-    apiClient.patch<{ id: string; title: string }>(`/works/${id}`, data),
+    apiClient.patch<{ id: string; title: string; area: string | null }>(`/works/${id}`, data),
 
   delete: (id: string) => apiClient.delete(`/works/${id}`),
 };

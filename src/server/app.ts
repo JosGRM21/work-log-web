@@ -23,12 +23,15 @@ app.use(
 app.use(express.json({ limit: '16kb' }));
 app.use(cookieParser());
 
-const uploadDir = path.resolve(process.cwd(), './uploads');
+const uploadDir = path.resolve(process.cwd(), process.env.LOCAL_UPLOAD_PATH || './uploads');
 app.use(
   '/uploads',
   express.static(uploadDir, {
     maxAge: '1y',
     immutable: true,
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    },
   }),
 );
 

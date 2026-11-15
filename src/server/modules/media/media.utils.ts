@@ -37,12 +37,43 @@ export interface MultipartUploadOptions {
 
 export interface MultipartRequestStream extends Readable {
   headers: IncomingHttpHeaders;
+  complete?: boolean;
 }
 
 interface QuotaReservationCallbacks {
   isAborted: () => boolean;
   reserveSlot: (mediaType: 'image' | 'video') => void;
   onStorageInitialized: (key: string, uploadPromise: Promise<PutObjectResult>) => void;
+}
+
+async function writeWithBackpressure(stream: PassThrough, chunk: Buffer): Promise<void> {
+  if (stream.destroyed || stream.writableEnded) {
+    throw new Error('Stream de procesamiento cerrado prematuramente.');
+  }
+  if (!stream.write(chunk)) {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        stream.off('drain', onDrain);
+        stream.off('error', onError);
+        stream.off('close', onClose);
+      };
+      const onDrain = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (err: Error) => {
+        cleanup();
+        reject(err);
+      };
+      const onClose = () => {
+        cleanup();
+        reject(new Error('Stream de procesamiento cerrado antes de drenar.'));
+      };
+      stream.once('drain', onDrain);
+      stream.once('error', onError);
+      stream.once('close', onClose);
+    });
+  }
 }
 
 class MediaValidationTransform extends Transform {
@@ -125,6 +156,8 @@ class MediaValidationTransform extends Transform {
 
         this.mainInput = new PassThrough();
         this.thumbInput = new PassThrough();
+        this.mainInput.on('error', () => {});
+        this.thumbInput.on('error', () => {});
 
         this.mainSharpInstance = sharp()
           .rotate()
@@ -170,9 +203,13 @@ class MediaValidationTransform extends Transform {
         this.callbacks.onStorageInitialized(this.storageKey, this.storagePromise);
         this.callbacks.onStorageInitialized(this.thumbKey, this.thumbStoragePromise);
 
-        this.mainInput.write(this.headerBuffer);
-        this.thumbInput.write(this.headerBuffer);
-        callback();
+        const initialChunk = this.headerBuffer;
+        Promise.all([
+          writeWithBackpressure(this.mainInput, initialChunk),
+          writeWithBackpressure(this.thumbInput, initialChunk),
+        ])
+          .then(() => callback())
+          .catch((err) => callback(err as Error));
         return;
       } else {
         this.storageKey = `works/${this.workId}/${assetUuid}.${detectedType.extension}`;
@@ -201,12 +238,16 @@ class MediaValidationTransform extends Transform {
     }
 
     if (this.mainInput && this.thumbInput) {
-      this.mainInput.write(chunk);
-      this.thumbInput.write(chunk);
+      Promise.all([
+        writeWithBackpressure(this.mainInput, chunk),
+        writeWithBackpressure(this.thumbInput, chunk),
+      ])
+        .then(() => callback())
+        .catch((err) => callback(err as Error));
     } else {
       this.push(chunk);
+      callback();
     }
-    callback();
   }
 
   override _flush(callback: TransformCallback): void {
@@ -250,6 +291,7 @@ export function parseAndUploadMultipartFiles(
   options: MultipartUploadOptions,
 ): Promise<UploadedFileStreamResult[]> {
   const storageDriver = options.storageDriver ?? storage;
+  const maxAllowedFiles = options.maxImagesLimit + options.maxVideosLimit;
 
   return new Promise((resolve, reject) => {
     const contentType = req.headers['content-type'];
@@ -263,7 +305,14 @@ export function parseAndUploadMultipartFiles(
 
     let bb: busboy.Busboy;
     try {
-      bb = busboy({ headers: req.headers });
+      bb = busboy({
+        headers: req.headers,
+        limits: {
+          files: maxAllowedFiles,
+          fields: 10,
+          parts: maxAllowedFiles + 10,
+        },
+      });
     } catch (err) {
       return reject(
         AppError.badRequest(
@@ -272,18 +321,26 @@ export function parseAndUploadMultipartFiles(
       );
     }
 
-    const uploadedResults: UploadedFileStreamResult[] = [];
-    const activeKeys = new Set<string>();
+    const uploadedResults: Array<{ index: number; result: UploadedFileStreamResult }> = [];
+    const activeUploads = new Map<string, Promise<PutObjectResult>>();
     const abortController = new AbortController();
     const filePromises: Promise<void>[] = [];
 
+    let fileSequence = 0;
     let imageCount = options.currentImageCount;
     let videoCount = options.currentVideoCount;
     let hasEncounteredError = false;
+    let isMultipartDone = false;
+
+    const cleanupReqListeners = () => {
+      req.off('aborted', onClientAbort);
+      req.off('close', onReqClose);
+    };
 
     const rollbackAndReject = async (error: Error) => {
       if (hasEncounteredError) return;
       hasEncounteredError = true;
+      cleanupReqListeners();
       abortController.abort();
 
       try {
@@ -293,7 +350,21 @@ export function parseAndUploadMultipartFiles(
       }
       req.resume();
 
-      const keysToPurge = new Set<string>([...uploadedResults.map((r) => r.key), ...activeKeys]);
+      // Esperar a que las promesas de escritura en curso finalicen o aborten antes de borrar en storage
+      if (activeUploads.size > 0) {
+        await Promise.allSettled(Array.from(activeUploads.values()));
+      }
+
+      const keysToPurge = new Set<string>();
+      for (const { result: r } of uploadedResults) {
+        keysToPurge.add(r.key);
+        if (r.mediaType === 'image') {
+          keysToPurge.add(r.key.replace(/\.[^.]+$/, '-thumb.webp'));
+        }
+      }
+      for (const key of activeUploads.keys()) {
+        keysToPurge.add(key);
+      }
 
       if (keysToPurge.size > 0) {
         await Promise.allSettled(
@@ -304,13 +375,55 @@ export function parseAndUploadMultipartFiles(
       reject(error);
     };
 
-    bb.on('file', (_fieldName: string, fileStream: Readable, info: busboy.FileInfo) => {
+    const onClientAbort = () => {
+      if (!isMultipartDone && !hasEncounteredError) {
+        void rollbackAndReject(
+          AppError.badRequest('La conexión fue cerrada antes de completar la subida.'),
+        );
+      }
+    };
+
+    const onReqClose = () => {
+      if (req.complete === false) {
+        onClientAbort();
+      }
+    };
+
+    req.once('aborted', onClientAbort);
+    req.once('close', onReqClose);
+
+    bb.on('filesLimit', () => {
+      void rollbackAndReject(
+        AppError.badRequest(
+          `Se excedió el límite máximo de archivos permitidos en una sola solicitud (${maxAllowedFiles}).`,
+        ),
+      );
+    });
+
+    bb.on('partsLimit', () => {
+      void rollbackAndReject(
+        AppError.badRequest('Demasiadas partes en la solicitud multipart.'),
+      );
+    });
+
+    bb.on('file', (fieldName: string, fileStream: Readable, info: busboy.FileInfo) => {
       if (hasEncounteredError) {
         fileStream.resume();
         return;
       }
 
+      if (fieldName !== 'files') {
+        fileStream.resume();
+        void rollbackAndReject(
+          AppError.badRequest(
+            `Nombre de campo multipart no permitido ("${fieldName}"). Utilice el campo "files".`,
+          ),
+        );
+        return;
+      }
+
       const filename = info.filename || 'archivo-multimedia';
+      const currentFileIndex = fileSequence++;
 
       const validatorTransform = new MediaValidationTransform(
         filename,
@@ -336,8 +449,8 @@ export function parseAndUploadMultipartFiles(
               videoCount++;
             }
           },
-          onStorageInitialized: (key) => {
-            activeKeys.add(key);
+          onStorageInitialized: (key, uploadPromise) => {
+            activeUploads.set(key, uploadPromise);
           },
         },
       );
@@ -350,19 +463,22 @@ export function parseAndUploadMultipartFiles(
               validatorTransform.storagePromise,
               validatorTransform.thumbStoragePromise ?? Promise.resolve(null),
             ]);
-            activeKeys.delete(validatorTransform.storageKey);
+            activeUploads.delete(validatorTransform.storageKey);
             if (validatorTransform.thumbKey) {
-              activeKeys.delete(validatorTransform.thumbKey);
+              activeUploads.delete(validatorTransform.thumbKey);
             }
             uploadedResults.push({
-              key: storedMain.key,
-              url: storedMain.url,
-              thumbnailUrl: storedThumb?.url,
-              mimeType: validatorTransform.thumbKey
-                ? 'image/webp'
-                : validatorTransform.detected.mimeType,
-              mediaType: validatorTransform.detected.mediaType,
-              sizeBytes: storedMain.sizeBytes,
+              index: currentFileIndex,
+              result: {
+                key: storedMain.key,
+                url: storedMain.url,
+                thumbnailUrl: storedThumb?.url,
+                mimeType: validatorTransform.thumbKey
+                  ? 'image/webp'
+                  : validatorTransform.detected.mimeType,
+                mediaType: validatorTransform.detected.mediaType,
+                sizeBytes: storedMain.sizeBytes,
+              },
             });
           }
         } catch (err) {
@@ -391,8 +507,13 @@ export function parseAndUploadMultipartFiles(
     bb.on('close', async () => {
       try {
         await Promise.all(filePromises);
+        isMultipartDone = true;
+        cleanupReqListeners();
         if (!hasEncounteredError) {
-          resolve(uploadedResults);
+          const orderedResults = uploadedResults
+            .sort((a, b) => a.index - b.index)
+            .map((item) => item.result);
+          resolve(orderedResults);
         }
       } catch (err) {
         await rollbackAndReject(err as Error);

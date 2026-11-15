@@ -7,6 +7,8 @@ interface RateLimitOptions {
   message?: string;
 }
 
+const MAX_TRACKED_IPS = 10_000;
+
 export function createRateLimiter(options: RateLimitOptions) {
   const hits = new Map<string, { count: number; resetTime: number }>();
 
@@ -27,6 +29,12 @@ export function createRateLimiter(options: RateLimitOptions) {
 
     const record = hits.get(ip);
     if (!record || now > record.resetTime) {
+      if (!record && hits.size >= MAX_TRACKED_IPS) {
+        const oldestKey = hits.keys().next().value;
+        if (oldestKey !== undefined) {
+          hits.delete(oldestKey);
+        }
+      }
       hits.set(ip, { count: 1, resetTime: now + options.windowMs });
       return next();
     }

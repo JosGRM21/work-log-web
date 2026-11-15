@@ -6,14 +6,29 @@ export { isValidUuid, type AllowedMediaType };
 
 export const MAX_IMAGE_SIZE_BYTES = Number(process.env.MAX_IMAGE_SIZE_BYTES) || 10485760; // 10 MB (RNF-STOR-01)
 export const MAX_VIDEO_SIZE_BYTES = Number(process.env.MAX_VIDEO_SIZE_BYTES) || 157286400; // 150 MB (RNF-STOR-01)
+export const MAX_THUMBNAIL_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export const MAX_IMAGES_PER_WORK = 20; // RN-03
 export const MAX_VIDEOS_PER_WORK = 4; // RN-03
+
+export const ALLOWED_MIME_MAP: Record<string, DetectedMediaType> = {
+  'image/jpeg': { mimeType: 'image/jpeg', mediaType: 'image', extension: 'jpg' },
+  'image/png': { mimeType: 'image/png', mediaType: 'image', extension: 'png' },
+  'image/webp': { mimeType: 'image/webp', mediaType: 'image', extension: 'webp' },
+  'video/mp4': { mimeType: 'video/mp4', mediaType: 'video', extension: 'mp4' },
+  'video/webm': { mimeType: 'video/webm', mediaType: 'video', extension: 'webm' },
+};
 
 export interface DetectedMediaType {
   mimeType: string;
   mediaType: AllowedMediaType;
   extension: string;
+}
+
+export function resolveAllowedMimeType(mime: unknown): DetectedMediaType | null {
+  if (typeof mime !== 'string') return null;
+  const cleanMime = mime.trim().toLowerCase();
+  return ALLOWED_MIME_MAP[cleanMime] ?? null;
 }
 
 export function detectMagicBytes(buffer: Buffer): DetectedMediaType | null {
@@ -97,6 +112,9 @@ export function validateFileSizeBytes(
   mediaType: AllowedMediaType,
   filename = 'archivo',
 ): void {
+  if (!Number.isInteger(sizeBytes) || sizeBytes <= 0) {
+    throw AppError.badRequest(`El tamaño del archivo "${filename}" debe ser un entero positivo.`);
+  }
   const maxBytes = mediaType === 'image' ? MAX_IMAGE_SIZE_BYTES : MAX_VIDEO_SIZE_BYTES;
   if (sizeBytes > maxBytes) {
     const limitMb = Math.round(maxBytes / (1024 * 1024));

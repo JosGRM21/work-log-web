@@ -23,8 +23,6 @@ function resolveSessionUser(req: Request): void {
     id: payload.userId,
     email: payload.email,
     fullName: payload.fullName,
-    createdAt: new Date(),
-    updatedAt: new Date(),
   };
 }
 

@@ -9,6 +9,7 @@ export interface IWorkRepository {
     Array<{
       id: string;
       title: string;
+      area: string | null;
       status: string;
       referenceDate: Date;
       nextMaintenanceDate: Date | null;
@@ -21,6 +22,10 @@ export interface IWorkRepository {
     }>
   >;
   getStatusGroupCounts(): Promise<Array<{ status: string; _count: { id: number } }>>;
+  getStatusGroupCountsByArea(
+    area: string,
+  ): Promise<Array<{ status: string; _count: { id: number } }>>;
+  getDistinctAreas(): Promise<string[]>;
   getTotalMediaCount(): Promise<number>;
   getMediaCountsByWorkIds(
     workIds: string[],
@@ -28,6 +33,7 @@ export interface IWorkRepository {
   findByIdWithMedia(id: string): Promise<{
     id: string;
     title: string;
+    area: string | null;
     description: string | null;
     status: string;
     referenceDate: Date;
@@ -51,6 +57,7 @@ export interface IWorkRepository {
   ): Promise<{
     id: string;
     title: string;
+    area: string | null;
     status: string;
     referenceDate: Date;
     createdAt: Date;
@@ -61,6 +68,7 @@ export interface IWorkRepository {
   ): Promise<{
     id: string;
     title: string;
+    area: string | null;
     status: string;
     updatedAt: Date;
   }>;
@@ -75,9 +83,15 @@ export class WorkRepository implements IWorkRepository {
   constructor(private readonly db: PrismaClient = defaultPrisma) {}
 
   async findMany(query: ListWorksQuery) {
-    const whereClause: { status?: string } = {};
+    const whereClause: {
+      status?: string;
+      area?: { equals: string; mode: 'insensitive' };
+    } = {};
     if (query.status) {
       whereClause.status = query.status;
+    }
+    if (query.area) {
+      whereClause.area = { equals: query.area, mode: 'insensitive' };
     }
 
     return this.db.workItem.findMany({
@@ -95,6 +109,7 @@ export class WorkRepository implements IWorkRepository {
       select: {
         id: true,
         title: true,
+        area: true,
         status: true,
         referenceDate: true,
         nextMaintenanceDate: true,
@@ -119,6 +134,36 @@ export class WorkRepository implements IWorkRepository {
       by: ['status'],
       _count: { id: true },
     });
+  }
+
+  async getStatusGroupCountsByArea(area: string) {
+    return this.db.workItem.groupBy({
+      by: ['status'],
+      where: { area: { equals: area, mode: 'insensitive' } },
+      _count: { id: true },
+    });
+  }
+
+  async getDistinctAreas() {
+    const rows = await this.db.workItem.findMany({
+      where: { area: { not: null } },
+      select: { area: true },
+      distinct: ['area'],
+      orderBy: { area: 'asc' },
+    });
+    // Deduplicar sin distinguir mayúsculas/minúsculas para mantener coherencia con el filtro insensitive
+    const canonicalByLower = new Map<string, string>();
+    for (const row of rows) {
+      const clean = row.area?.trim();
+      if (!clean) continue;
+      const lower = clean.toLowerCase();
+      if (!canonicalByLower.has(lower)) {
+        canonicalByLower.set(lower, clean);
+      }
+    }
+    return Array.from(canonicalByLower.values()).sort((a, b) =>
+      a.localeCompare(b, 'es', { sensitivity: 'base' }),
+    );
   }
 
   async getTotalMediaCount() {
@@ -152,6 +197,7 @@ export class WorkRepository implements IWorkRepository {
       data: {
         userId,
         title: data.title,
+        area: data.area,
         description: data.description,
         status: data.status,
         referenceDate: data.referenceDate,
@@ -162,6 +208,7 @@ export class WorkRepository implements IWorkRepository {
       select: {
         id: true,
         title: true,
+        area: true,
         status: true,
         referenceDate: true,
         createdAt: true,
@@ -192,6 +239,7 @@ export class WorkRepository implements IWorkRepository {
         where: { id },
         data: {
           ...(data.title !== undefined ? { title: data.title } : {}),
+          ...(data.area !== undefined ? { area: data.area } : {}),
           ...(data.description !== undefined ? { description: data.description } : {}),
           ...(data.status !== undefined ? { status: data.status } : {}),
           ...(data.referenceDate !== undefined ? { referenceDate: data.referenceDate } : {}),
@@ -204,6 +252,7 @@ export class WorkRepository implements IWorkRepository {
         select: {
           id: true,
           title: true,
+          area: true,
           status: true,
           updatedAt: true,
         },
@@ -226,9 +275,16 @@ export class WorkRepository implements IWorkRepository {
   }
 
   async delete(id: string) {
-    await this.db.workItem.delete({
-      where: { id },
-    });
+    try {
+      await this.db.workItem.delete({
+        where: { id },
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2025') {
+        throw AppError.notFound('El trabajo solicitado no existe.');
+      }
+      throw error;
+    }
   }
 }
 

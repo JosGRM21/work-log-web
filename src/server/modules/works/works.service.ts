@@ -28,24 +28,35 @@ export class WorkService {
     const cached = getCachedMetrics();
     let statusGroups: Array<{ status: string; _count: { id: number } }>;
     let totalMedia: number;
+    let areas: string[];
 
     const itemsPromise = this.repository.findMany(query);
+    const areaGroupsPromise = query.area
+      ? this.repository.getStatusGroupCountsByArea(query.area)
+      : Promise.resolve(null);
     let items: Awaited<typeof itemsPromise>;
+    let areaStatusGroups: Awaited<typeof areaGroupsPromise>;
 
     if (cached) {
       statusGroups = cached.statusGroups;
       totalMedia = cached.totalMedia;
-      items = await itemsPromise;
+      areas = cached.areas;
+      [items, areaStatusGroups] = await Promise.all([itemsPromise, areaGroupsPromise]);
     } else {
-      const [fetchedItems, fetchedStatusGroups, fetchedTotalMedia] = await Promise.all([
-        itemsPromise,
-        this.repository.getStatusGroupCounts(),
-        this.repository.getTotalMediaCount(),
-      ]);
+      const [fetchedItems, fetchedAreaGroups, fetchedStatusGroups, fetchedTotalMedia, fetchedAreas] =
+        await Promise.all([
+          itemsPromise,
+          areaGroupsPromise,
+          this.repository.getStatusGroupCounts(),
+          this.repository.getTotalMediaCount(),
+          this.repository.getDistinctAreas(),
+        ]);
       items = fetchedItems;
+      areaStatusGroups = fetchedAreaGroups;
       statusGroups = fetchedStatusGroups;
       totalMedia = fetchedTotalMedia;
-      setCachedMetrics(statusGroups, totalMedia);
+      areas = fetchedAreas;
+      setCachedMetrics(statusGroups, totalMedia, areas);
     }
 
     const summary = {
@@ -60,9 +71,28 @@ export class WorkService {
       else if (group.status === 'pending') summary.pending = group._count.id;
     }
 
-    const total = query.status
-      ? (statusGroups.find((g) => g.status === query.status)?._count.id ?? 0)
-      : summary.completed + summary.in_progress + summary.pending;
+    let filteredSummary: { completed: number; in_progress: number; pending: number } | undefined;
+    let total: number;
+
+    if (areaStatusGroups) {
+      filteredSummary = {
+        completed: 0,
+        in_progress: 0,
+        pending: 0,
+      };
+      for (const group of areaStatusGroups) {
+        if (group.status === 'completed') filteredSummary.completed = group._count.id;
+        else if (group.status === 'in_progress') filteredSummary.in_progress = group._count.id;
+        else if (group.status === 'pending') filteredSummary.pending = group._count.id;
+      }
+      total = query.status
+        ? (areaStatusGroups.find((g) => g.status === query.status)?._count.id ?? 0)
+        : filteredSummary.completed + filteredSummary.in_progress + filteredSummary.pending;
+    } else {
+      total = query.status
+        ? (statusGroups.find((g) => g.status === query.status)?._count.id ?? 0)
+        : summary.completed + summary.in_progress + summary.pending;
+    }
 
     const workIds = items.map((item) => item.id);
     const countsByWork = await this.repository.getMediaCountsByWorkIds(workIds);
@@ -95,6 +125,7 @@ export class WorkService {
       return {
         id: item.id,
         title: item.title,
+        area: item.area ?? null,
         status: item.status as WorkStatus,
         reference_date: formatDateToIsoDateOnly(item.referenceDate)!,
         next_maintenance_date: formatDateToIsoDateOnly(item.nextMaintenanceDate),
@@ -111,6 +142,8 @@ export class WorkService {
         limit: query.limit,
         offset: query.offset,
         summary,
+        ...(filteredSummary ? { filtered_summary: filteredSummary } : {}),
+        areas,
       },
     };
   }
@@ -129,6 +162,7 @@ export class WorkService {
     return {
       id: item.id,
       title: item.title,
+      area: item.area ?? null,
       description: item.description,
       status: item.status as WorkStatus,
       reference_date: formatDateToIsoDateOnly(item.referenceDate)!,
@@ -161,6 +195,7 @@ export class WorkService {
     return {
       id: created.id,
       title: created.title,
+      area: created.area ?? null,
       status: created.status as WorkStatus,
       reference_date: formatDateToIsoDateOnly(created.referenceDate)!,
       created_at: created.createdAt.toISOString(),
@@ -179,6 +214,7 @@ export class WorkService {
     return {
       id: updated.id,
       title: updated.title,
+      area: updated.area ?? null,
       status: updated.status as WorkStatus,
       updated_at: updated.updatedAt.toISOString(),
     };

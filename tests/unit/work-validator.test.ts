@@ -69,15 +69,26 @@ describe('Work Validator (Unit)', () => {
     it('debe normalizar y asignar valores por defecto en payloads válidos', () => {
       const result = validateCreateWorkInput({
         title: ' Fabricación de Portón ',
+        area: ' Taller Metalmecánico ',
         status: 'in_progress',
         start_date: '2026-10-01',
       });
       expect(result.title).toBe('Fabricación de Portón');
+      expect(result.area).toBe('Taller Metalmecánico');
       expect(result.status).toBe('in_progress');
       expect(result.referenceDate).toBeInstanceOf(Date);
       expect(result.startDate).toBeInstanceOf(Date);
       expect(result.endDate).toBeNull();
       expect(result.nextMaintenanceDate).toBeNull();
+    });
+
+    it('debe rechazar áreas que excedan 100 caracteres o no sean texto', () => {
+      expect(() =>
+        validateCreateWorkInput({ title: 'Obra', area: 'a'.repeat(101) }),
+      ).toThrowError(AppError);
+      expect(() =>
+        validateCreateWorkInput({ title: 'Obra', area: 123 as unknown as string }),
+      ).toThrowError(AppError);
     });
 
     it('debe aceptar y parsear next_maintenance_date válida', () => {
@@ -94,6 +105,22 @@ describe('Work Validator (Unit)', () => {
         validateCreateWorkInput({
           title: 'Mantenimiento Bomba',
           next_maintenance_date: 'fecha-incorrecta',
+        }),
+      ).toThrowError(AppError);
+    });
+
+    it('debe rechazar reference_date nulo y description no string en creación', () => {
+      expect(() =>
+        validateCreateWorkInput({
+          title: 'Revisión Tablero',
+          reference_date: null,
+        }),
+      ).toThrowError(AppError);
+
+      expect(() =>
+        validateCreateWorkInput({
+          title: 'Revisión Tablero',
+          description: 12345 as unknown as string,
         }),
       ).toThrowError(AppError);
     });
@@ -123,6 +150,23 @@ describe('Work Validator (Unit)', () => {
       const resultEmpty = validateUpdateWorkInput({ next_maintenance_date: '' });
       expect(resultEmpty.nextMaintenanceDate).toBeNull();
     });
+
+    it('debe permitir actualizar y limpiar el campo area', () => {
+      const updated = validateUpdateWorkInput({ area: '  Almacén Central  ' });
+      expect(updated.area).toBe('Almacén Central');
+
+      const cleared = validateUpdateWorkInput({ area: '' });
+      expect(cleared.area).toBeNull();
+    });
+
+    it('debe rechazar description no string y permitir limpiarla con null o cadena vacía', () => {
+      expect(() =>
+        validateUpdateWorkInput({ description: { texto: 'invalido' } as unknown as string }),
+      ).toThrowError(AppError);
+
+      expect(validateUpdateWorkInput({ description: null }).description).toBeNull();
+      expect(validateUpdateWorkInput({ description: '   ' }).description).toBeNull();
+    });
   });
 
   describe('parseListWorksQuery', () => {
@@ -132,11 +176,18 @@ describe('Work Validator (Unit)', () => {
       expect(parsed.limit).toBe(20);
       expect(parsed.offset).toBe(0);
       expect(parsed.status).toBeUndefined();
+      expect(parsed.area).toBeUndefined();
     });
 
-    it('debe rechazar límites fuera de rango o estados no permitidos', () => {
+    it('debe parsear correctamente el parámetro area', () => {
+      const parsed = parseListWorksQuery({ area: '  Planta de Beneficio  ' });
+      expect(parsed.area).toBe('Planta de Beneficio');
+    });
+
+    it('debe rechazar límites fuera de rango, áreas demasiado largas o estados no permitidos', () => {
       expect(() => parseListWorksQuery({ limit: 150 })).toThrowError(AppError);
       expect(() => parseListWorksQuery({ status: 'archived' })).toThrowError(AppError);
+      expect(() => parseListWorksQuery({ area: 'a'.repeat(101) })).toThrowError(AppError);
     });
   });
 });

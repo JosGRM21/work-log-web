@@ -1,4 +1,4 @@
-import { prisma } from '../infra/db/client.js';
+import { prisma, pool } from '../infra/db/client.js';
 import { storage } from '../infra/storage/index.js';
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
@@ -105,11 +105,13 @@ if (isDirectExecution) {
   purgeOrphanFiles()
     .then(async () => {
       await prisma.$disconnect();
+      await pool.end();
       process.exit(0);
     })
     .catch(async (err) => {
       console.error('[purge-orphans] Error fatal en conciliación:', err);
       await prisma.$disconnect();
+      await pool.end();
       process.exit(1);
     });
 }

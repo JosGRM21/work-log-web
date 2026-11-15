@@ -20,15 +20,21 @@ export interface StorageObjectInfo {
   sizeBytes?: number;
 }
 
+export interface StorageObjectMetadata {
+  sizeBytes: number;
+  mimeType?: string;
+}
+
 export interface StorageDriver {
   putObject(options: PutObjectOptions): Promise<PutObjectResult>;
   deleteObject(key: string): Promise<void>;
+  headObject(key: string): Promise<StorageObjectMetadata | null>;
   getUrl(key: string): string;
   normalizeKey(rawKeyOrPath: string): string;
   listObjects(prefix: string): Promise<StorageObjectInfo[]>;
   createPresignedUploadUrl?(options: {
     key: string;
     mimeType: string;
-    maxSizeBytes: number;
+    sizeBytes: number;
   }): Promise<{ uploadUrl: string; key: string }>;
 }
