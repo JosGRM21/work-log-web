@@ -23,6 +23,11 @@ app.use(
 app.use(express.json({ limit: '16kb' }));
 app.use(cookieParser());
 
+// Endpoint ligero de healthcheck / keep-alive (para cron-jobs y evitar suspensión en Render)
+app.get('/healthz', (_req, res) => {
+  res.status(200).send('OK');
+});
+
 const uploadDir = path.resolve(process.cwd(), process.env.LOCAL_UPLOAD_PATH || './uploads');
 app.use(
   '/uploads',
