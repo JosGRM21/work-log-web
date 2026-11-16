@@ -191,7 +191,7 @@ const FeedFiltersComponent: React.FC<FeedFiltersProps> = ({
               alignItemWithTrigger={false}
               align="start"
               sideOffset={6}
-              className="border border-white/10 bg-[#0c121e] text-white min-w-[140px] sm:min-w-[200px]"
+              className="border border-white/10 bg-[#0c121e] text-white min-w-[200px]"
             >
               <SelectItem value="all">Todas las áreas</SelectItem>
               {availableAreas.map((area) => (
