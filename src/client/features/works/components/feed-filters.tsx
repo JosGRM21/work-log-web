@@ -160,16 +160,17 @@ const FeedFiltersComponent: React.FC<FeedFiltersProps> = ({
           })}
         </div>
 
-        {/* Derecha: Selector de Área y Orden cronológico (tamaño compacto en móvil, sin sobredimensionar) */}
-        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 w-auto self-start sm:self-auto sm:justify-end">
+        {/* Derecha: Selector de Área y Orden cronológico (tamaño compacto y elipsis inteligente) */}
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 max-w-full self-stretch sm:self-auto sm:justify-end">
           <Select
             value={currentArea}
             onValueChange={(val) => onAreaChange((val as string) || 'all')}
           >
             <SelectTrigger
               aria-label="Filtrar trabajos por área"
+              title={isAreaFiltered ? currentArea : 'Todas las áreas'}
               className={cn(
-                'w-auto min-w-[130px] max-w-[190px] sm:min-w-[155px] sm:max-w-[215px] data-[size=default]:h-8 sm:data-[size=default]:h-9 rounded-full border border-white/[0.08] px-2.5 sm:px-3.5 text-xs font-medium transition-all cursor-pointer select-none touch-manipulation focus-visible:ring-2 focus-visible:ring-[#4285F4]/60',
+                'min-w-0 flex-1 sm:flex-initial sm:w-auto sm:min-w-[155px] sm:max-w-[280px] md:max-w-[340px] data-[size=default]:h-8 sm:data-[size=default]:h-9 rounded-full border border-white/[0.08] px-2.5 sm:px-3.5 text-xs font-medium transition-all cursor-pointer select-none touch-manipulation focus-visible:ring-2 focus-visible:ring-[#4285F4]/60',
                 isAreaFiltered
                   ? 'bg-[#1a73e8]/18 dark:bg-[#1a73e8]/18 border-[#4285F4]/60 text-white shadow-[0_0_12px_rgba(26,115,232,0.25)]'
                   : 'bg-[#090d16] dark:bg-[#090d16] hover:border-[#4285F4]/40 hover:bg-white/[0.04] dark:hover:bg-white/[0.04] text-[#c4c7c5] hover:text-white',
@@ -178,7 +179,9 @@ const FeedFiltersComponent: React.FC<FeedFiltersProps> = ({
               <MapPin className="w-3.5 h-3.5 text-[#669df6] shrink-0" />
               <SelectValue placeholder="Todas las áreas">
                 {isAreaFiltered ? (
-                  <span className="truncate">{currentArea}</span>
+                  <span className="truncate block" title={currentArea}>
+                    {currentArea}
+                  </span>
                 ) : (
                   <>
                     <span className="truncate sm:hidden">Área: Todas</span>
@@ -191,12 +194,12 @@ const FeedFiltersComponent: React.FC<FeedFiltersProps> = ({
               alignItemWithTrigger={false}
               align="start"
               sideOffset={6}
-              className="border border-white/10 bg-[#0c121e] text-white min-w-[200px]"
+              className="border border-white/10 bg-[#0c121e] text-white min-w-[200px] max-w-[min(90vw,380px)]"
             >
               <SelectItem value="all">Todas las áreas</SelectItem>
               {availableAreas.map((area) => (
-                <SelectItem key={area} value={area}>
-                  {area}
+                <SelectItem key={area} value={area} title={area}>
+                  <span className="truncate block">{area}</span>
                 </SelectItem>
               ))}
             </SelectContent>
