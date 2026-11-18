@@ -25,6 +25,7 @@ interface CachedResponse {
 }
 
 const CACHE_TTL_MS = 60 * 1000; // 1 minuto de validez fresca
+const API_MAX_LIMIT = 100;
 const catalogCache = new Map<string, CachedResponse>();
 const detailCache = new Map<string, WorkItemDetail>();
 
@@ -50,7 +51,7 @@ export function clearWorksCache(): void {
 }
 
 export function useWorks(options: UseWorksOptions = {}) {
-  const limit = options.limit ?? 18;
+  const pagedLimit = options.limit ?? 18;
   const [works, setWorks] = useState<WorkItemSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<WorkListSummary | undefined>(undefined);
@@ -68,6 +69,10 @@ export function useWorks(options: UseWorksOptions = {}) {
     options.initialArea ?? 'all',
   );
   const [order, setOrderState] = useState<'desc' | 'asc'>(options.initialOrder ?? 'desc');
+
+  const isGroupedByArea = areaFilter === 'all';
+  const limit = isGroupedByArea ? API_MAX_LIMIT : pagedLimit;
+  const effectiveOffset = isGroupedByArea ? 0 : offset;
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -94,7 +99,7 @@ export function useWorks(options: UseWorksOptions = {}) {
 
   const fetchWorks = useCallback(
     async (bypassCache = false) => {
-      const cacheKey = `${statusFilter}:${areaFilter}:${order}:${limit}:${offset}`;
+      const cacheKey = `${statusFilter}:${areaFilter}:${order}:${limit}:${effectiveOffset}`;
       const cached = catalogCache.get(cacheKey);
       const isFresh = cached && Date.now() - cached.timestamp < CACHE_TTL_MS;
 
@@ -130,33 +135,58 @@ export function useWorks(options: UseWorksOptions = {}) {
       abortControllerRef.current = abortController;
 
       try {
+        const cacheMode = bypassCache ? 'no-store' : undefined;
         const response = await worksApi.list(
           {
             status: statusFilter,
             area: areaFilter,
             order,
             limit,
-            offset,
+            offset: effectiveOffset,
           },
           abortController.signal,
-          bypassCache ? 'no-store' : undefined,
+          cacheMode,
         );
 
-        if (response.data.length === 0 && response.meta.total > 0 && offset > 0) {
+        let fullData = response.data;
+        if (isGroupedByArea && response.meta.total > response.data.length) {
+          const remainingOffsets: number[] = [];
+          for (let nextOffset = API_MAX_LIMIT; nextOffset < response.meta.total; nextOffset += API_MAX_LIMIT) {
+            remainingOffsets.push(nextOffset);
+          }
+          const extraPages = await Promise.all(
+            remainingOffsets.map((nextOffset) =>
+              worksApi.list(
+                {
+                  status: statusFilter,
+                  area: areaFilter,
+                  order,
+                  limit: API_MAX_LIMIT,
+                  offset: nextOffset,
+                },
+                abortController.signal,
+                cacheMode,
+              ),
+            ),
+          );
+          fullData = [...response.data, ...extraPages.flatMap((page) => page.data)];
+        }
+
+        if (!isGroupedByArea && fullData.length === 0 && response.meta.total > 0 && effectiveOffset > 0) {
           const fallbackOffset = Math.max(0, Math.floor((response.meta.total - 1) / limit) * limit);
           setOffset(fallbackOffset);
           return;
         }
 
         catalogCache.set(cacheKey, {
-          data: response.data,
+          data: fullData,
           total: response.meta.total,
           summary: response.meta.summary,
           filteredSummary: response.meta.filtered_summary,
           areas: response.meta.areas,
           timestamp: Date.now(),
         });
-        setWorks(response.data);
+        setWorks(fullData);
         setTotal(response.meta.total);
         if (response.meta.summary) {
           setSummary(response.meta.summary);
@@ -176,7 +206,7 @@ export function useWorks(options: UseWorksOptions = {}) {
         }
       }
     },
-    [statusFilter, areaFilter, order, limit, offset],
+    [statusFilter, areaFilter, order, limit, effectiveOffset, isGroupedByArea],
   );
 
   useEffect(() => {

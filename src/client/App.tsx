@@ -9,7 +9,9 @@ import { Navbar } from './components/layout/navbar.js';
 import { HeroSection } from './features/works/components/hero-section.js';
 import { FeedFilters } from './features/works/components/feed-filters.js';
 import { WorkCard } from './features/works/components/work-card.js';
+import { WorkAreaSection } from './features/works/components/work-area-section.js';
 import { WorkFeedSkeletons } from './features/works/components/work-feed-skeletons.js';
+import { groupWorksByArea } from './features/works/utils/group-works-by-area.js';
 
 // Modales cargados dinámicamente mediante code-splitting
 const WorkDetailModal = React.lazy(() =>
@@ -159,10 +161,22 @@ export const App: React.FC = () => {
     };
   }, [summary, filteredSummary, areaFilter, total, works]);
 
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-  const currentPage = Math.floor(offset / limit) + 1;
-  const fromRecord = offset + 1;
-  const toRecord = Math.min(offset + works.length, total);
+  const isGroupedByArea = areaFilter === 'all';
+  const groupedWorks = useMemo(() => {
+    if (!isGroupedByArea) return [];
+    const groups = groupWorksByArea(works, areas);
+    let runningOffset = 0;
+    return groups.map((group) => {
+      const priorityOffset = runningOffset;
+      runningOffset += group.works.length;
+      return { ...group, priorityOffset };
+    });
+  }, [isGroupedByArea, works, areas]);
+
+  const totalPages = isGroupedByArea ? 1 : Math.max(1, Math.ceil(total / limit));
+  const currentPage = isGroupedByArea ? 1 : Math.floor(offset / limit) + 1;
+  const fromRecord = works.length === 0 ? 0 : isGroupedByArea ? 1 : offset + 1;
+  const toRecord = isGroupedByArea ? works.length : Math.min(offset + works.length, total);
 
   const handlePageChange = useCallback(
     (page: number) => {
@@ -280,19 +294,35 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Lista / Grid de Trabajos en Modo Tarjeta */}
+        {/* Lista / Grid de Trabajos en Modo Tarjeta (agrupado por área cuando no hay filtro de área) */}
         {!isLoading && !error && works.length > 0 && (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {works.map((work, index) => (
-                <WorkCard
-                  key={work.id}
-                  work={work}
-                  onSelect={selectWork}
-                  priority={offset === 0 && index < 3}
-                />
-              ))}
-            </div>
+            {isGroupedByArea ? (
+              <div className="flex flex-col gap-8 sm:gap-10">
+                {groupedWorks.map((group) => (
+                  <WorkAreaSection
+                    key={group.key}
+                    areaKey={group.key}
+                    areaLabel={group.areaLabel}
+                    isUnassigned={group.isUnassigned}
+                    works={group.works}
+                    priorityOffset={group.priorityOffset}
+                    onSelectWork={selectWork}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                {works.map((work, index) => (
+                  <WorkCard
+                    key={work.id}
+                    work={work}
+                    onSelect={selectWork}
+                    priority={offset === 0 && index < 3}
+                  />
+                ))}
+              </div>
+            )}
 
             {/* Pie de catálogo */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-white/[0.08] pt-5 sm:pt-6 mt-2 sm:mt-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
@@ -305,6 +335,16 @@ export const App: React.FC = () => {
                   </strong>{' '}
                   de <strong className="text-white font-medium tabular-nums">{total}</strong>{' '}
                   {total === 1 ? 'registro' : 'registros'}
+                  {isGroupedByArea && groupedWorks.length > 0 && (
+                    <>
+                      {' '}
+                      en{' '}
+                      <strong className="text-white font-medium tabular-nums">
+                        {groupedWorks.length}
+                      </strong>{' '}
+                      {groupedWorks.length === 1 ? 'área' : 'áreas'}
+                    </>
+                  )}
                 </span>
               </div>
 

@@ -478,7 +478,17 @@ function uploadToPresignedUrl(
       }
     };
 
-    xhr.onerror = () => reject(new Error('Fallo de red durante la subida directa a storage.'));
+    xhr.onerror = () => {
+      try {
+        const targetOrigin = new URL(uploadUrl).origin;
+        console.error(
+          `[MediaUploader] Error de red o bloqueo CORS en subida directa PUT hacia ${targetOrigin} desde ${window.location.origin}`,
+        );
+      } catch {
+        // Ignorar si la URL no puede parsearse
+      }
+      reject(new Error('Fallo de red durante la subida directa a storage.'));
+    };
     xhr.send(file);
   });
 }
