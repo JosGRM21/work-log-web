@@ -9,7 +9,6 @@ import {
   Play,
   Calendar,
   Layers,
-  MapPin,
 } from 'lucide-react';
 import { STATUS_CONFIG } from '@/constants/status.js';
 
@@ -163,20 +162,11 @@ const WorkCardComponent: React.FC<WorkCardProps> = ({ work, onSelect, priority =
       {/* Cuerpo Tipográfico de la Tarjeta */}
       <div className="px-2.5 sm:px-3.5 pt-3 sm:pt-4 pb-2.5 sm:pb-3 flex flex-col flex-1 justify-between gap-3.5 sm:gap-5">
         <div className="space-y-1.5 sm:space-y-2">
-          <div className="flex items-center justify-between gap-2 text-xs text-[#80868b] flex-wrap">
+          <div className="flex items-center justify-between gap-2 text-xs text-[#80868b]">
             <span className="inline-flex items-center gap-1.5 text-[#9aa0a6] font-normal shrink-0">
               <Calendar className="w-3.5 h-3.5 text-[#669df6]" />
               {formatWorkDate(work.reference_date)}
             </span>
-            {work.area && (
-              <span
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[10px] sm:text-[11px] font-medium text-[#8ab4f8] max-w-[165px] truncate"
-                title={`Área: ${work.area}`}
-              >
-                <MapPin className="w-3 h-3 text-[#669df6] shrink-0" />
-                <span className="truncate">{work.area}</span>
-              </span>
-            )}
           </div>
 
           <h3 className="text-[16px] sm:text-[18px] font-medium tracking-[-0.015em] text-[#f1f3f4] line-clamp-2 leading-[1.35] group-hover:text-[#8ab4f8] transition-colors font-heading">
